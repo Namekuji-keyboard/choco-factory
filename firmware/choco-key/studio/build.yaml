@@ -1,0 +1,13 @@
+---
+# ZMK Studio 対応版:
+#   セントラルである右手 (Choco-Key_R) のみに studio-rpc-usb-uart スニペットと CONFIG_ZMK_STUDIO を追加。
+#   左手 (ペリフェラル) と settings_reset は変更なし。
+include:
+  - board: seeeduino_xiao_ble
+    shield: Choco-Key_R rgbled_adapter
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y
+  - board: seeeduino_xiao_ble
+    shield: Choco-Key_L rgbled_adapter
+  - board: seeeduino_xiao_ble
+    shield: settings_reset

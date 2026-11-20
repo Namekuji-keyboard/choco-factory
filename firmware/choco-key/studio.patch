@@ -1,0 +1,115 @@
+diff -ru choco-key/original/build.yaml choco-key/studio/build.yaml
+--- choco-key/original/build.yaml	2026-11-20 21:44:26.748943500 +0900
++++ choco-key/studio/build.yaml	2026-11-20 21:44:41.012598400 +0900
+@@ -1,7 +1,12 @@
+ ---
++# ZMK Studio 対応版:
++#   セントラルである右手 (Choco-Key_R) のみに studio-rpc-usb-uart スニペットと CONFIG_ZMK_STUDIO を追加。
++#   左手 (ペリフェラル) と settings_reset は変更なし。
+ include:
+   - board: seeeduino_xiao_ble
+     shield: Choco-Key_R rgbled_adapter
++    snippet: studio-rpc-usb-uart
++    cmake-args: -DCONFIG_ZMK_STUDIO=y
+   - board: seeeduino_xiao_ble
+     shield: Choco-Key_L rgbled_adapter
+   - board: seeeduino_xiao_ble
+diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choco-Key.keymap
+--- choco-key/original/config/Choco-Key.keymap	2026-11-20 21:44:26.389645300 +0900
++++ choco-key/studio/config/Choco-Key.keymap	2026-11-20 21:44:56.339595500 +0900
+@@ -99,7 +99,7 @@
+ 
+         layer_4 {
+             bindings = <
+-&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &trans  &trans  &trans  &trans  &trans 
++&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &studio_unlock  &trans  &trans  &trans  &trans 
+ &bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &trans  &trans  &trans  &trans  &trans
+ &bt BT_CLR      &trans        &trans        &trans        &trans                               &trans  &trans  &trans  &trans  &trans
+ &trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans  &trans  &trans  &trans  &trans
+@@ -107,5 +107,10 @@
+ 
+             sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+         };
++
++        // ZMK Studio から追加できる予備レイヤー (通常ビルドでは無視されます)
++        layer_5 { status = "reserved"; };
++        layer_6 { status = "reserved"; };
++        layer_7 { status = "reserved"; };
+     };
+ };
+diff -ru choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi
+--- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-20 21:44:26.591752600 +0900
++++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-20 21:44:56.327935600 +0900
+@@ -1,9 +1,63 @@
+ #include <dt-bindings/zmk/matrix_transform.h>
++#include <physical_layouts.dtsi>
+ 
+ / {
+     chosen {
+         zmk,kscan = &kscan0;
+-        zmk,matrix_transform = &default_transform;
++        zmk,physical-layout = &default_layout;
++    };
++
++    // ZMK Studio 用の物理レイアウト (キーの並び順はキーマップ・matrix transform と同じ)
++    // 単位: 1/100 キー。基板 (Choco_Key.kicad_pcb) の 19mm 格子配置に合わせています。
++    default_layout: default_layout {
++        compatible = "zmk,physical-layout";
++        display-name = "Choco-Key";
++        transform = <&default_transform>;
++        kscan = <&kscan0>;
++        keys  //                     w   h     x    y  rot rx ry
++            = <&key_physical_attrs 100 100     0    0  0 0 0>
++            , <&key_physical_attrs 100 100   100    0  0 0 0>
++            , <&key_physical_attrs 100 100   200    0  0 0 0>
++            , <&key_physical_attrs 100 100   300    0  0 0 0>
++            , <&key_physical_attrs 100 100   400    0  0 0 0>
++            , <&key_physical_attrs 100 100   800    0  0 0 0>
++            , <&key_physical_attrs 100 100   900    0  0 0 0>
++            , <&key_physical_attrs 100 100  1000    0  0 0 0>
++            , <&key_physical_attrs 100 100  1100    0  0 0 0>
++            , <&key_physical_attrs 100 100  1200    0  0 0 0>
++            , <&key_physical_attrs 100 100     0  100  0 0 0>
++            , <&key_physical_attrs 100 100   100  100  0 0 0>
++            , <&key_physical_attrs 100 100   200  100  0 0 0>
++            , <&key_physical_attrs 100 100   300  100  0 0 0>
++            , <&key_physical_attrs 100 100   400  100  0 0 0>
++            , <&key_physical_attrs 100 100   800  100  0 0 0>
++            , <&key_physical_attrs 100 100   900  100  0 0 0>
++            , <&key_physical_attrs 100 100  1000  100  0 0 0>
++            , <&key_physical_attrs 100 100  1100  100  0 0 0>
++            , <&key_physical_attrs 100 100  1200  100  0 0 0>
++            , <&key_physical_attrs 100 100     0  200  0 0 0>
++            , <&key_physical_attrs 100 100   100  200  0 0 0>
++            , <&key_physical_attrs 100 100   200  200  0 0 0>
++            , <&key_physical_attrs 100 100   300  200  0 0 0>
++            , <&key_physical_attrs 100 100   400  200  0 0 0>
++            , <&key_physical_attrs 100 100   800  200  0 0 0>
++            , <&key_physical_attrs 100 100   900  200  0 0 0>
++            , <&key_physical_attrs 100 100  1000  200  0 0 0>
++            , <&key_physical_attrs 100 100  1100  200  0 0 0>
++            , <&key_physical_attrs 100 100  1200  200  0 0 0>
++            , <&key_physical_attrs 100 100     0  300  0 0 0>
++            , <&key_physical_attrs 100 100   100  300  0 0 0>
++            , <&key_physical_attrs 100 100   200  300  0 0 0>
++            , <&key_physical_attrs 100 100   300  300  0 0 0>
++            , <&key_physical_attrs 100 100   400  300  0 0 0>
++            , <&key_physical_attrs 100 100   500  300  0 0 0>
++            , <&key_physical_attrs 100 100   700  300  0 0 0>
++            , <&key_physical_attrs 100 100   800  300  0 0 0>
++            , <&key_physical_attrs 100 100   900  300  0 0 0>
++            , <&key_physical_attrs 100 100  1000  300  0 0 0>
++            , <&key_physical_attrs 100 100  1100  300  0 0 0>
++            , <&key_physical_attrs 100 100  1200  300  0 0 0>
++            ;
+     };
+ 
+     default_transform: keymap_transform_0 {
+diff -ru choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml
+--- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-20 21:44:26.530583900 +0900
++++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-20 21:44:56.354032100 +0900
+@@ -6,3 +6,4 @@
+ requires: [seeeduino_xiao_ble]
+ features:
+   - keys
++  - studio

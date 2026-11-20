@@ -1,0 +1,39 @@
+{
+  "name": "choco-factory",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Web keymap editor for ZMK keyboards (Choco-Key) with ZMK Studio RPC over USB / BLE",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/w3c-web-serial": "^1.0.9",
+    "@types/web-bluetooth": "^0.0.22",
+    "@vitejs/plugin-react": "^4.7.0",
+    "fake-indexeddb": "^6.2.8",
+    "run-script-os": "^1.1.6",
+    "tailwindcss": "^4.3.5",
+    "typescript": "5.7",
+    "vite": "^6.4.6",
+    "vitest": "^5.1.1"
+  },
+  "dependencies": {
+    "@zmkfirmware/zmk-studio-ts-client": "^0.0.18",
+    "clsx": "^2.1.1",
+    "idb": "^8.0.4",
+    "jszip": "^3.10.2",
+    "lucide-react": "^1.77.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.1.0"
+  }
+}

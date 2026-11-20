@@ -1,0 +1,175 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* デザイントークン: ライト / ダーク */
+@theme {
+  --font-sans: 'Inter', 'Noto Sans JP', system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-cap: var(--cap);
+  --color-cap-edge: var(--cap-edge);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+}
+
+:root {
+  --bg: #f3f1ee;
+  --surface: #ffffff;
+  --surface-2: #f7f5f2;
+  --line: #e4dfd8;
+  --fg: #2a211c;
+  --muted: #7b7068;
+  --accent: #9a5b34;
+  --accent-fg: #ffffff;
+  --accent-soft: #f4e6dc;
+  --cap: #ffffff;
+  --cap-edge: #d9d2c9;
+  --ok: #2f8f5b;
+  --warn: #b7791f;
+  --danger: #c2413a;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #16130f;
+  --surface: #211c18;
+  --surface-2: #2a241f;
+  --line: #3a322b;
+  --fg: #f1ebe5;
+  --muted: #a39789;
+  --accent: #e0a57a;
+  --accent-fg: #24170e;
+  --accent-soft: #3c2a1e;
+  --cap: #2d2722;
+  --cap-edge: #171310;
+  --ok: #5cc28a;
+  --warn: #e3b05a;
+  --danger: #f07a72;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* キーキャップ */
+.keycap {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cap) 100%, white 0%) 0%, var(--cap) 100%);
+  border: 1px solid var(--cap-edge);
+  box-shadow:
+    0 2px 0 var(--cap-edge),
+    0 3px 8px rgb(0 0 0 / 0.06);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+.keycap:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--cap-edge));
+}
+.keycap:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 var(--cap-edge);
+}
+.keycap[data-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 2px 0 var(--cap-edge),
+    0 6px 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.keycap[data-changed='true']::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--warn);
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+}
+@utility btn-primary {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 bg-accent text-accent-fg hover:brightness-110;
+}
+@utility btn-ghost {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 text-fg hover:bg-surface-2;
+}
+@utility btn-outline {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 border border-line bg-surface text-fg hover:bg-surface-2;
+}
+@utility btn-danger {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 bg-danger text-white hover:brightness-110;
+}
+@utility input {
+  @apply w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent/25;
+}
+@utility chip {
+  @apply inline-flex items-center rounded-md border border-line bg-surface px-2 py-1 text-xs font-medium text-fg transition-colors hover:border-accent/60;
+}
+.chip[data-on='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+@utility panel {
+  @apply rounded-2xl border border-line bg-surface;
+}
+@utility label {
+  @apply mb-1 block text-xs font-semibold tracking-wide text-muted;
+}
+
+/* スクロールバー */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-pop {
+  animation: pop-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
