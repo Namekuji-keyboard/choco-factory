@@ -8,11 +8,64 @@ export interface Binding {
   raw?: string;
 }
 
+/** ロータリーエンコーダー 1 個分の割り当て (時計回り / 反時計回り) */
+export interface SensorBinding {
+  cw: Binding;
+  ccw: Binding;
+}
+
 export interface Layer {
   /** レイヤー ID (ZMK のレイヤー ID。キーマップファイル上では定義順の番号) */
   id: number;
   name: string;
   bindings: Binding[];
+  /**
+   * エンコーダーの割り当て (sensor-bindings。添字 = センサー番号)。
+   * ZMK Studio では編集できないため、ファイル出力 → ファームウェアのビルドで反映します。
+   * undefined = キーマップファイルの記述をそのまま使う
+   */
+  sensors?: SensorBinding[];
+}
+
+export type OsId = 'windows' | 'macos' | 'linux' | 'ios' | 'android';
+
+export interface OsSettings {
+  id: OsId;
+  /** OS 内のレイヤー番号 (0 〜 layersPerOs-1)。OS 切替キーで最初に有効になるレイヤー */
+  defaultLayer: number;
+}
+
+/**
+ * OS 別キーマップの構成。
+ * project.layers は「OS の順 × OS 内レイヤー」の順で並ぶ (OS i のレイヤー j = layers[i * layersPerOs + j])。
+ * ZMK のレイヤー番号もこの並びと同じです。
+ */
+export interface OsLayout {
+  layersPerOs: number;
+  systems: OsSettings[];
+}
+
+/** ショートカット (複数キーの同時押し) */
+export interface ShortcutDef {
+  id: string;
+  name: string;
+  /** 対象 OS ('all' = 共通) */
+  os: OsId | 'all';
+  /** 押す順のキーコード (修飾キーを含む) */
+  keys: number[];
+  note?: string;
+}
+
+/** コンボ (複数キーの同時押しで別の動作) */
+export interface ComboDef {
+  id: string;
+  name: string;
+  /** キー位置 (0 始まり) */
+  positions: number[];
+  binding: Binding;
+  /** 有効なレイヤー ID (空 = すべてのレイヤー) */
+  layers: number[];
+  timeoutMs: number;
 }
 
 /** 物理キー配置 (単位: キー 1u) */
@@ -84,6 +137,14 @@ export interface Project {
   macros: MacroDef[];
   createdAt: number;
   updatedAt: number;
+  /** データ形式のバージョン (2 = OS 別キーマップ) */
+  schema?: number;
+  /** OS 別キーマップの構成 */
+  os?: OsLayout;
+  shortcuts?: ShortcutDef[];
+  combos?: ComboDef[];
+  /** 旧形式から移行したときに OS 別の構成に入りきらなかったレイヤー (失わないよう保存) */
+  legacyLayers?: Layer[];
   /** 最後に同期したデバイス */
   device?: { name: string; serial?: string; syncedAt?: number };
 }

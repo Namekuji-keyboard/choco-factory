@@ -1,4 +1,7 @@
-import type { Binding, Layer } from '../model/types';
+import type { Binding, Layer, OsLayout, ShortcutDef } from '../model/types';
+import { OS_LIST, osLayerLabel, splitLayerIndex } from '../model/os';
+import { findShortcutFor } from '../model/shortcuts';
+import { keycodeDescriptionJa } from '../zmk/keycodes.ja';
 import { BL_COMMANDS, BT_COMMANDS, EP_COMMANDS, MOUSE_BUTTONS, MOUSE_MOVES, OUT_COMMANDS, RGB_COMMANDS, mouseScrolls, type BehaviorDef } from '../zmk/behaviors';
 import { keycodeByValue, keycodeLabel, modsOf, MOD_FUNCS, stripMods, type HostLayout } from '../zmk/keycodes';
 
@@ -35,13 +38,31 @@ export interface DisplayContext {
   layers: Layer[];
   host: HostLayout;
   scrollVal: number;
+  /** OS 別キーマップの構成と、表示中のレイヤー番号 */
+  os?: OsLayout;
+  current?: number;
+  shortcuts?: ShortcutDef[];
 }
 
 function layerName(id: number, ctx: DisplayContext): string {
   const idx = ctx.layers.findIndex((l) => l.id === id);
   if (idx < 0) return `L${id}?`;
+  if (ctx.os) return osLayerLabel(ctx.os, idx, ctx.current);
   const name = ctx.layers[idx].name;
   return name === `Layer ${idx}` ? `L${idx}` : name;
+}
+
+function osSwitchDisplay(b: Binding, ctx: DisplayContext): KeyDisplay | null {
+  if (b.b !== 'os_sel' && b.b !== 'os_to') return null;
+  const target = b.b === 'os_sel' ? b.p[1] : b.p[0];
+  const idx = ctx.layers.findIndex((l) => l.id === target);
+  const osName = ctx.os && idx >= 0 ? OS_LIST[splitLayerIndex(ctx.os, idx).os]?.short : undefined;
+  const label = osName ?? layerName(target ?? 0, ctx);
+  const layer = ctx.os && idx >= 0 ? `L${splitLayerIndex(ctx.os, idx).layer}` : '';
+  if (b.b === 'os_sel') {
+    return { main: label, hold: `BT${b.p[0]} ${layer}`.trim(), tag: 'OS', tone: 'layer', title: `OS 切替: Bluetooth プロファイル ${b.p[0]} + ${osName ?? ''} ${layer} (${layerName(target ?? 0, ctx)})` };
+  }
+  return { main: label, hold: layer || undefined, tag: 'OS', tone: 'layer', title: `OS 切替 (レイヤーのみ): ${osName ?? ''} ${layer}` };
 }
 
 export function describeBinding(b: Binding, ctx: DisplayContext): KeyDisplay {
@@ -49,9 +70,18 @@ export function describeBinding(b: Binding, ctx: DisplayContext): KeyDisplay {
   const p = b.p;
   const title = def ? `${def.nameJa}` : `&${b.b}`;
   if (b.raw !== undefined) return { main: def?.nameJa ?? b.b, hold: b.raw, tone: 'custom', title: `&${b.b} ${b.raw}` };
+  const osd = osSwitchDisplay(b, ctx);
+  if (osd) return osd;
   switch (b.b) {
-    case 'kp':
-      return { main: keycodeLabel(p[0] ?? 0, ctx.host), tone: isModifierKey(p[0] ?? 0) ? 'mod' : 'key', title: keyTitle(p[0] ?? 0) };
+    case 'kp': {
+      const sc = modsOf(p[0] ?? 0) ? findShortcutFor(b, ctx.shortcuts, ctx.os && ctx.current !== undefined ? OS_LIST[splitLayerIndex(ctx.os, ctx.current).os]?.id : undefined) : undefined;
+      return {
+        main: keycodeLabel(p[0] ?? 0, ctx.host),
+        hold: sc?.name,
+        tone: isModifierKey(p[0] ?? 0) ? 'mod' : 'key',
+        title: (sc ? `ショートカット「${sc.name}」\n` : '') + keyTitle(p[0] ?? 0),
+      };
+    }
     case 'mt':
       return { main: keycodeLabel(p[1] ?? 0, ctx.host), hold: modLabel(p[0] ?? 0, ctx.host), tag: 'MT', tone: 'tap', title: `Mod-Tap: タップ ${keycodeLabel(p[1] ?? 0, ctx.host)} / ホールド ${modLabel(p[0] ?? 0, ctx.host)}` };
     case 'lt':
@@ -112,14 +142,29 @@ export function describeBinding(b: Binding, ctx: DisplayContext): KeyDisplay {
     if (def.compatible === 'zmk,behavior-hold-tap' && params.length === 2) {
       return { main: params[1], hold: params[0], tag: 'HT', tone: 'tap', title: `${def.nameJa}: タップ ${params[1]} / ホールド ${params[0]}` };
     }
-    return { main: def.nameJa, hold: params.join(' ') || undefined, tag: def.compatible?.startsWith('zmk,behavior-macro') ? 'MACRO' : undefined, tone: 'custom', title };
+    const isShortcut = /^sc_/.test(def.label) && def.definition;
+    return {
+      main: def.nameJa,
+      hold: params.join(' ') || undefined,
+      tag: isShortcut ? 'SC' : def.compatible?.startsWith('zmk,behavior-macro') ? 'MACRO' : undefined,
+      tone: 'custom',
+      title: isShortcut ? `ショートカット「${def.nameJa}」(複数キーの同時押し。ファームウェアのビルドが必要)` : title,
+    };
   }
   return { main: b.b.startsWith('__device_') ? '?' : b.b, hold: p.join(' ') || undefined, tone: 'custom', title: `&${b.b}` };
 }
 
 function keyTitle(v: number): string {
   const k = keycodeByValue(v) ?? keycodeByValue(stripMods(v));
-  return k ? `${k.names.join(' / ')}\n${k.comment}` : `0x${v.toString(16)}`;
+  return k ? `${k.names.join(' / ')}\n${keycodeDescriptionJa(k)}` : `0x${v.toString(16)}`;
+}
+
+/** エンコーダーの動作の短い表示 */
+export function describeSensorAction(b: Binding, ctx: DisplayContext): string {
+  if (b.b === 'trans') return '透過';
+  if (b.b === 'none') return 'なし';
+  const d = describeBinding(b, ctx);
+  return d.hold && b.b !== 'kp' ? `${d.main} ${d.hold}` : d.hold ? `${d.main} (${d.hold})` : d.main;
 }
 
 export const TONE_CLASSES: Record<Tone, string> = {

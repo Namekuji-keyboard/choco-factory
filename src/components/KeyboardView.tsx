@@ -3,13 +3,13 @@ import clsx from 'clsx';
 import { Usb } from 'lucide-react';
 import { useEditor, scrollValFor } from '../state/editor';
 import { useDevice, useRegistry } from '../state/device';
-import { describeBinding, TONE_CLASSES, type DisplayContext } from '../lib/display';
-import { bindingsEqual, parseKeymap } from '../zmk/keymap';
+import { describeBinding, describeSensorAction, TONE_CLASSES, type DisplayContext } from '../lib/display';
+import { bindingsEqual } from '../zmk/keymap';
 import type { KeyLayout } from '../model/types';
 
 const GAP = 0.08; // キー同士の隙間 (1u に対する割合)
 
-export function KeyboardView() {
+export function KeyboardView({ onEncoder }: { onEncoder?: (sensorIndex: number) => void }) {
   const project = useEditor((s) => s.project);
   const kb = useEditor((s) => s.keyboard);
   const layerIndex = useEditor((s) => s.layerIndex);
@@ -40,19 +40,17 @@ export function KeyboardView() {
 
   const layer = project?.layers[layerIndex];
   const ctx: DisplayContext = useMemo(
-    () => ({ behaviors: registry, layers: project?.layers ?? [], host, scrollVal: project ? scrollValFor(project.keymapSource) : 10 }),
-    [registry, project, host],
+    () => ({
+      behaviors: registry,
+      layers: project?.layers ?? [],
+      host,
+      scrollVal: project ? scrollValFor(project.keymapSource) : 10,
+      os: project?.os,
+      current: layerIndex,
+      shortcuts: project?.shortcuts,
+    }),
+    [registry, project, host, layerIndex],
   );
-  const sensorBindings = useMemo(() => {
-    if (!project) return [] as string[];
-    try {
-      const parsed = parseKeymap(project.keymapSource);
-      const src = parsed.layers[layerIndex]?.sensorBindings ?? '';
-      return src.split(',').map((s) => s.replace(/[<>]/g, '').trim());
-    } catch {
-      return [];
-    }
-  }, [project, layerIndex]);
 
   if (!project || !layer) return null;
   const devLayer = deviceLayers?.[layerIndex];
@@ -107,16 +105,30 @@ export function KeyboardView() {
               />
             );
           })}
-          {kb.encoders?.map((enc) => (
-            <div
-              key={enc.sensorIndex}
-              className="absolute flex items-center justify-center rounded-full border border-line bg-surface-2 text-muted shadow-inner"
-              style={{ left: (enc.x - 0.3) * unit, top: (enc.y - 0.3) * unit, width: unit * 0.6, height: unit * 0.6 }}
-              title={`${enc.name}: ${sensorBindings[enc.sensorIndex] ?? '(なし)'}\nエンコーダーの割り当ては ZMK Studio では変更できません (キーマップファイルで設定)`}
-            >
-              <div className="h-[55%] w-[55%] rounded-full border-2 border-dashed border-muted/50" />
-            </div>
-          ))}
+          {kb.encoders?.map((enc) => {
+            const sb = layer.sensors?.[enc.sensorIndex];
+            const cw = sb ? describeSensorAction(sb.cw, ctx) : '—';
+            const ccw = sb ? describeSensorAction(sb.ccw, ctx) : '—';
+            return (
+              <button
+                key={enc.sensorIndex}
+                type="button"
+                onClick={() => onEncoder?.(enc.sensorIndex)}
+                className="group absolute flex items-center justify-center rounded-full border border-line bg-surface-2 text-muted shadow-inner transition-colors hover:border-accent"
+                style={{ left: (enc.x - 0.3) * unit, top: (enc.y - 0.3) * unit, width: unit * 0.6, height: unit * 0.6 }}
+                title={`${enc.name}\n時計回り: ${cw}\n反時計回り: ${ccw}\nクリックで設定 (反映にはファームウェアのビルドが必要)`}
+                aria-label={`${enc.name}の設定`}
+              >
+                <div className="h-[55%] w-[55%] rounded-full border-2 border-dashed border-muted/50 group-hover:border-accent" />
+                <span
+                  className="pointer-events-none absolute top-full mt-0.5 max-w-[3.2em] truncate text-center leading-tight text-muted"
+                  style={{ fontSize: Math.max(8, unit * 0.13), width: unit * 1.2 }}
+                >
+                  ↻{cw}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { Usb, Bluetooth, Cpu, Settings, Sun, Moon, Monitor, FolderOpen, ChevronDown, Unplug, HelpCircle, FileDown, Loader2 } from 'lucide-react';
+import { Usb, Cpu, Settings, Sun, Moon, Monitor, FolderOpen, ChevronDown, Unplug, HelpCircle, FileDown, Loader2 } from 'lucide-react';
 import { useEditor } from '../state/editor';
 import { STATUS_LABELS, useDevice, useDeviceDiff, type DeviceStatus } from '../state/device';
-import { isBluetoothSupported, isSerialSupported } from '../device/studio';
+import { isSerialSupported } from '../device/studio';
 import { MenuItem } from './LayerBar';
 
 const STATUS_COLORS: Record<DeviceStatus | 'editing', string> = {
@@ -51,7 +51,6 @@ export function Header({ onOpen }: { onOpen: (d: 'projects' | 'settings' | 'file
   const ThemeIcon = theme === 'system' ? Monitor : theme === 'light' ? Sun : Moon;
   const busy = status === 'selecting' || status === 'connecting' || status === 'loading';
   const serialOk = isSerialSupported();
-  const bleOk = isBluetoothSupported();
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3 sm:px-4">
@@ -70,7 +69,7 @@ export function Header({ onOpen }: { onOpen: (d: 'projects' | 'settings' | 'file
           <span className={clsx('h-2 w-2 rounded-full', STATUS_COLORS[status])} />
           <span className="font-medium">{STATUS_LABELS[status]}</span>
           {info && <span className="text-muted">· {info.name}</span>}
-          {kind && dev && <span className="text-muted">{kind === 'ble' ? 'BLE' : kind === 'sim' ? 'シミュレーター' : 'USB'}</span>}
+          {kind && dev && <span className="text-muted">{kind === 'sim' ? 'シミュレーター' : 'USB'}</span>}
         </div>
 
         {dev ? (
@@ -88,17 +87,11 @@ export function Header({ onOpen }: { onOpen: (d: 'projects' | 'settings' | 'file
               <ChevronDown size={14} />
             </button>
             {menu && (
-              <div className="panel animate-pop absolute top-full right-0 z-30 mt-1 w-72 p-1 shadow-xl">
+              <div className="panel animate-pop z-30 p-1 shadow-xl max-sm:fixed max-sm:top-14 max-sm:right-3 max-sm:left-3 sm:absolute sm:top-full sm:right-0 sm:mt-1 sm:w-72">
                 <MenuItem icon={<Usb size={14} />} disabled={!serialOk} onClick={() => (setMenu(false), connect('usb'))}>
                   <span>
                     USB (推奨)
                     <span className="block text-xs text-muted">右手 (セントラル) を USB-C で接続</span>
-                  </span>
-                </MenuItem>
-                <MenuItem icon={<Bluetooth size={14} />} disabled={!bleOk} onClick={() => (setMenu(false), connect('ble'))}>
-                  <span>
-                    Bluetooth (試験的)
-                    <span className="block text-xs text-muted">ZMK 公式では Linux の Chrome のみ動作確認済み</span>
                   </span>
                 </MenuItem>
                 {showSim && (
@@ -109,7 +102,10 @@ export function Header({ onOpen }: { onOpen: (d: 'projects' | 'settings' | 'file
                     </span>
                   </MenuItem>
                 )}
-                {(!serialOk || !bleOk) && <p className="px-2.5 py-1.5 text-xs text-muted">お使いのブラウザでは一部の接続方法が使えません。Chrome または Edge (PC) をお使いください。</p>}
+                {!serialOk && <p className="px-2.5 py-1.5 text-xs text-muted">お使いのブラウザは USB 接続 (Web Serial) に対応していません。Chrome または Edge (PC) をお使いください。</p>}
+                <p className="border-t border-line px-2.5 pt-1.5 pb-1 text-[11px] text-muted">
+                  Bluetooth 経由の編集は、Windows / macOS のブラウザでは ZMK 公式に未対応のため提供していません。キーボード本来の Bluetooth 接続には影響しません。
+                </p>
               </div>
             )}
           </div>

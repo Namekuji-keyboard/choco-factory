@@ -47,7 +47,9 @@ describe('ZIP 出力', () => {
 describe('プロジェクト・保存', () => {
   it('元の .keymap をインポートできる / キー数が違うとエラー', () => {
     const p = projectFromKeymapFile(chocoKey, 'orig', chocoKey.files.original['config/Choco-Key.keymap']);
-    expect(p.layers).toHaveLength(5);
+    // 5 レイヤーのキーマップは各 OS にコピーされて 25 レイヤーになる
+    expect(p.layers).toHaveLength(25);
+    expect(p.layers[20].bindings[41]).toEqual({ b: 'lt', p: [24, 0x070029] });
     const broken = chocoKey.files.original['config/Choco-Key.keymap'].replace('&kp Q ', '');
     expect(() => projectFromKeymapFile(chocoKey, 'x', broken)).toThrow(/キー数/);
   });

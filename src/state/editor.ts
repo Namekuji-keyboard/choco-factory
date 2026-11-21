@@ -1,6 +1,9 @@
 import { create } from 'zustand';
-import type { Binding, KeyboardDefinition, Layer, MacroDef, Project } from '../model/types';
-import { createProject, emptyLayer, newId, nextLayerId, projectFromKeymapFile, defaultLayers } from '../model/project';
+import type { Binding, ComboDef, KeyboardDefinition, Layer, MacroDef, OsLayout, Project, SensorBinding, ShortcutDef } from '../model/types';
+import { createProject, emptyLayer, newId, nextLayerId, projectFromKeymapFile, defaultLayers, migrateProject, osLayersFromKeymap } from '../model/project';
+import { absLayer, defaultOsLayout, inferOsDefaults, relocateBinding, retargetOsKeys, splitLayerIndex } from '../model/os';
+import { resolveShortcut, shortcutBehaviors } from '../model/shortcuts';
+import { bindingsEqual } from '../zmk/keymap';
 import * as db from '../storage/db';
 import { KEYBOARDS, getKeyboard } from '../keyboards';
 import { behaviorRegistry, macroBehavior, parseKeymap } from '../zmk/keymap';
@@ -16,14 +19,17 @@ export interface Settings {
   showSimulator: boolean;
 }
 
-const DEFAULT_SETTINGS: Settings = { theme: 'system', hostLayout: 'jis', confirmApply: true, showSimulator: false };
+const DEFAULT_SETTINGS: Settings = { theme: 'dark', hostLayout: 'jis', confirmApply: true, showSimulator: false };
 
-export interface HistoryEntry {
+/** 履歴 (Undo / Redo) の対象になるプロジェクトの内容 */
+type Snapshot = Pick<Project, 'layers' | 'macros' | 'shortcuts' | 'combos' | 'os'>;
+
+export interface HistoryEntry extends Snapshot {
   label: string;
   time: number;
-  layers: Layer[];
-  macros: MacroDef[];
 }
+
+const snapshot = (p: Project): Snapshot => ({ layers: p.layers, macros: p.macros, shortcuts: p.shortcuts, combos: p.combos, os: p.os });
 
 export type SaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
 
@@ -49,6 +55,8 @@ interface EditorState {
   layerIndex: number;
   selected: number[];
   clipboard: Binding[] | null;
+  /** コピー元のレイヤー番号 (OS をまたいで貼り付けるときのレイヤー参照の付け替え用) */
+  clipboardFrom: number;
   past: HistoryEntry[];
   future: HistoryEntry[];
   saveStatus: SaveStatus;
@@ -79,7 +87,7 @@ interface EditorState {
 
   /** 選択中 (または指定) のキーに割り当てる */
   assign(binding: Binding | ((old: Binding) => Binding), label: string, positions?: number[]): void;
-  setLayers(layers: Layer[], label: string): void;
+  setLayers(layers: Layer[], label: string, os?: OsLayout): void;
   renameLayer(index: number, name: string): void;
   addLayer(copyFrom?: number): void;
   removeLayer(index: number): void;
@@ -91,6 +99,19 @@ interface EditorState {
   redo(): void;
   jumpTo(pastIndex: number): void;
   saveMacro(m: MacroDef, oldLabel?: string): void;
+  /** OS を選択 (同じ番号のレイヤーを表示) */
+  setOs(osIndex: number): void;
+  setOsDefault(osIndex: number, layer: number): void;
+  /** OS の全レイヤーを別の OS にコピー */
+  copyOs(from: number, to: number): void;
+  /** レイヤーの内容を別のレイヤーにコピー (同じ OS 内 / 別の OS) */
+  copyLayer(from: number, to: number): void;
+  saveShortcut(s: ShortcutDef): void;
+  removeShortcut(id: string): void;
+  saveCombo(c: ComboDef): void;
+  removeCombo(id: string): void;
+  /** エンコーダーの割り当て (layerIndices のレイヤーに同じ設定) */
+  setSensor(layerIndices: number[], sensorIndex: number, value: SensorBinding): void;
   removeMacro(label: string): void;
   replaceDevice(device: Project['device']): void;
 }
@@ -108,7 +129,7 @@ export const useEditor = create<EditorState>((set, get) => {
   const commit = (label: string, change: (p: Project) => Partial<Project>) => {
     const { project, past } = get();
     if (!project) return;
-    const entry: HistoryEntry = { label, time: Date.now(), layers: project.layers, macros: project.macros };
+    const entry: HistoryEntry = { label, time: Date.now(), ...snapshot(project) };
     const next = { ...project, ...change(project), updatedAt: Date.now() };
     set({ project: next, past: [...past, entry].slice(-HISTORY_LIMIT), future: [] });
     scheduleSave();
@@ -140,10 +161,31 @@ export const useEditor = create<EditorState>((set, get) => {
     }
   };
 
-  const loadInto = (p: Project) => {
-    set({ project: p, keyboard: getKeyboard(p.keyboardId), layerIndex: 0, selected: [], past: [], future: [], saveStatus: 'saved', pickerTarget: null });
+  const loadInto = (p0: Project) => {
+    const kb = getKeyboard(p0.keyboardId);
+    const p = migrateProject(p0, kb);
+    const migrated = p0.schema !== p.schema;
+    set({ project: p, keyboard: kb, layerIndex: p.os ? absLayer(p.os, 0, p.os.systems[0].defaultLayer) : 0, selected: [], past: [], future: [], saveStatus: 'saved', pickerTarget: null });
     void db.setMeta('lastProjectId', p.id);
+    if (migrated) {
+      void db.putProject(p);
+      get().toast('info', `「${p.name}」を OS 別キーマップ (5 OS × 5 レイヤー) の形式に変換しました。元の内容は各 OS にコピーされています。`);
+    }
   };
+
+  /** 割り当て (キー・エンコーダー・コンボ) のすべてのバインディングを変換 */
+  const mapAllBindings = (p: Project, fn: (b: Binding) => Binding): Partial<Project> => ({
+    layers: p.layers.map((l) => {
+      const bindings = l.bindings.map(fn);
+      const sensors = l.sensors?.map((s) => ({ cw: fn(s.cw), ccw: fn(s.ccw) }));
+      const changed = bindings.some((b, i) => b !== l.bindings[i]) || sensors?.some((s, i) => s.cw !== l.sensors![i].cw || s.ccw !== l.sensors![i].ccw);
+      return changed ? { ...l, bindings, ...(sensors ? { sensors } : {}) } : l;
+    }),
+    combos: (p.combos ?? []).map((c) => {
+      const b = fn(c.binding);
+      return b === c.binding ? c : { ...c, binding: b };
+    }),
+  });
 
   return {
     ready: false,
@@ -154,6 +196,7 @@ export const useEditor = create<EditorState>((set, get) => {
     layerIndex: 0,
     selected: [],
     clipboard: null,
+    clipboardFrom: 0,
     past: [],
     future: [],
     saveStatus: 'saved',
@@ -214,7 +257,7 @@ export const useEditor = create<EditorState>((set, get) => {
     },
     async importProject(proj) {
       await flush();
-      const p: Project = { ...proj, id: newId(), updatedAt: Date.now(), macros: proj.macros ?? [] };
+      const p: Project = migrateProject({ ...proj, id: newId(), updatedAt: Date.now(), macros: proj.macros ?? [] }, getKeyboard(proj.keyboardId));
       parseKeymap(p.keymapSource); // 妥当性確認
       await db.putProject(p);
       set((s) => ({ projects: upsert(s.projects, summary(p)) }));
@@ -296,8 +339,8 @@ export const useEditor = create<EditorState>((set, get) => {
         ),
       }));
     },
-    setLayers(layers, label) {
-      commit(label, () => ({ layers }));
+    setLayers(layers, label, os) {
+      commit(label, () => (os ? { layers, os } : { layers }));
       set((s) => ({ layerIndex: Math.min(s.layerIndex, layers.length - 1) }));
     },
     renameLayer(index, name) {
@@ -329,19 +372,32 @@ export const useEditor = create<EditorState>((set, get) => {
     resetToDefault() {
       const { project, keyboard } = get();
       if (!project) return;
-      commit('初期状態に戻す', () => ({ layers: defaultLayers(keyboard, project.keymapSource), macros: [] }));
+      const layers = osLayersFromKeymap(keyboard, project.keymapSource, defaultLayers(keyboard, project.keymapSource));
+      const os = inferOsDefaults(layers, defaultOsLayout());
+      commit('初期状態に戻す', () => ({ layers, macros: [], os, combos: parseKeymap(project.keymapSource).combos }));
       set({ layerIndex: 0, selected: [] });
     },
     copy() {
       const { project, layerIndex, selected } = get();
       if (!project || !selected.length) return;
       const sorted = [...selected].sort((a, b) => a - b);
-      set({ clipboard: sorted.map((pos) => project.layers[layerIndex].bindings[pos]) });
+      set({ clipboard: sorted.map((pos) => project.layers[layerIndex].bindings[pos]), clipboardFrom: layerIndex });
       get().toast('info', `${sorted.length} 個のキーをコピーしました`);
     },
     paste() {
-      const { project, clipboard, selected, layerIndex } = get();
+      const { project, selected, layerIndex, clipboardFrom } = get();
+      let clipboard = get().clipboard;
       if (!project || !clipboard?.length || !selected.length) return;
+      // 別の OS に貼り付ける場合、コピー元の OS 内を指すレイヤー参照を貼り付け先の OS に付け替える
+      if (project.os) {
+        const os = project.os;
+        const from = splitLayerIndex(os, clipboardFrom).os;
+        const to = splitLayerIndex(os, layerIndex).os;
+        if (from !== to) {
+          const reg = registryFor(project);
+          clipboard = clipboard.map((b) => relocateBinding(b, reg.get(b.b), os, from, to));
+        }
+      }
       const sorted = [...selected].sort((a, b) => a - b);
       // 1 個コピー → 選択中の全キーに貼り付け / 複数コピー → 先頭の選択位置から順に貼り付け
       const start = sorted[0];
@@ -357,8 +413,9 @@ export const useEditor = create<EditorState>((set, get) => {
       const { project, past, future } = get();
       if (!project || !past.length) return;
       const prev = past[past.length - 1];
-      const cur: HistoryEntry = { label: prev.label, time: Date.now(), layers: project.layers, macros: project.macros };
-      set({ project: { ...project, layers: prev.layers, macros: prev.macros, updatedAt: Date.now() }, past: past.slice(0, -1), future: [cur, ...future] });
+      const cur: HistoryEntry = { label: prev.label, time: Date.now(), ...snapshot(project) };
+      const { label: _l, time: _t, ...snap } = prev;
+      set({ project: { ...project, ...snap, updatedAt: Date.now() }, past: past.slice(0, -1), future: [cur, ...future] });
       set((s) => ({ layerIndex: Math.min(s.layerIndex, prev.layers.length - 1) }));
       scheduleSave();
     },
@@ -366,8 +423,9 @@ export const useEditor = create<EditorState>((set, get) => {
       const { project, past, future } = get();
       if (!project || !future.length) return;
       const next = future[0];
-      const cur: HistoryEntry = { label: next.label, time: Date.now(), layers: project.layers, macros: project.macros };
-      set({ project: { ...project, layers: next.layers, macros: next.macros, updatedAt: Date.now() }, past: [...past, cur], future: future.slice(1) });
+      const cur: HistoryEntry = { label: next.label, time: Date.now(), ...snapshot(project) };
+      const { label: _l, time: _t, ...snap } = next;
+      set({ project: { ...project, ...snap, updatedAt: Date.now() }, past: [...past, cur], future: future.slice(1) });
       set((s) => ({ layerIndex: Math.min(s.layerIndex, next.layers.length - 1) }));
       scheduleSave();
     },
@@ -391,6 +449,109 @@ export const useEditor = create<EditorState>((set, get) => {
       commit('マクロを削除', (p) => ({
         macros: p.macros.filter((m) => m.label !== label),
         layers: p.layers.map((l) => ({ ...l, bindings: l.bindings.map((b) => (b.b === label ? { b: 'none', p: [] } : b)) })),
+      }));
+    },
+    setOs(osIndex) {
+      const { project, layerIndex } = get();
+      if (!project?.os) return;
+      const rel = splitLayerIndex(project.os, layerIndex).layer;
+      set({ layerIndex: absLayer(project.os, osIndex, rel), pickerTarget: null });
+    },
+    setOsDefault(osIndex, layer) {
+      const { project } = get();
+      if (!project?.os) return;
+      const os: OsLayout = { ...project.os, systems: project.os.systems.map((s, i) => (i === osIndex ? { ...s, defaultLayer: layer } : s)) };
+      commit(`${project.os.systems[osIndex].id} のデフォルトレイヤーを Layer ${layer} に変更`, (p) => ({ os, layers: retargetOsKeys(p.layers, project.os!, os) }));
+    },
+    copyOs(from, to) {
+      const { project } = get();
+      if (!project?.os || from === to) return;
+      const os = project.os;
+      const reg = registryFor(project);
+      commit('OS のキーマップをコピー', (p) => ({
+        layers: p.layers.map((l, i) => {
+          const s = splitLayerIndex(os, i);
+          if (s.os !== to) return l;
+          const src = p.layers[absLayer(os, from, s.layer)];
+          return {
+            ...l,
+            bindings: src.bindings.map((b) => relocateBinding(b, reg.get(b.b), os, from, to)),
+            sensors: src.sensors?.map((x) => ({ cw: { ...x.cw }, ccw: { ...x.ccw } })),
+          };
+        }),
+        os: { ...os, systems: os.systems.map((s, i) => (i === to ? { ...s, defaultLayer: os.systems[from].defaultLayer } : s)) },
+      }));
+    },
+    copyLayer(from, to) {
+      const { project } = get();
+      if (!project || from === to) return;
+      const reg = registryFor(project);
+      const os = project.os;
+      const fromOs = os ? splitLayerIndex(os, from).os : 0;
+      const toOs = os ? splitLayerIndex(os, to).os : 0;
+      commit(`「${project.layers[from].name}」を「${project.layers[to].name}」にコピー`, (p) => ({
+        layers: p.layers.map((l, i) =>
+          i !== to
+            ? l
+            : {
+                ...l,
+                bindings: p.layers[from].bindings.map((b) => (os ? relocateBinding(b, reg.get(b.b), os, fromOs, toOs) : b)),
+                sensors: p.layers[from].sensors?.map((x) => ({ cw: { ...x.cw }, ccw: { ...x.ccw } })),
+              },
+        ),
+      }));
+    },
+    saveShortcut(sc) {
+      const { project } = get();
+      if (!project) return;
+      const list = project.shortcuts ?? [];
+      const old = list.find((x) => x.id === sc.id);
+      commit(old ? `ショートカット「${sc.name}」を編集` : `ショートカット「${sc.name}」を追加`, (p) => {
+        const shortcuts = old ? list.map((x) => (x.id === sc.id ? sc : x)) : [...list, sc];
+        const before = old ? resolveShortcut(old).binding : undefined;
+        const after = resolveShortcut(sc).binding;
+        // 割り当て済みのキーも新しい内容に更新
+        if (old && before && after && !bindingsEqual(before, after)) {
+          return { shortcuts, ...mapAllBindings(p, (b) => (bindingsEqual(b, before) ? { ...after, p: [...after.p] } : b)) };
+        }
+        return { shortcuts };
+      });
+    },
+    removeShortcut(id) {
+      const { project } = get();
+      const sc = project?.shortcuts?.find((x) => x.id === id);
+      if (!project || !sc) return;
+      const r = resolveShortcut(sc);
+      commit(`ショートカット「${sc.name}」を削除`, (p) => ({
+        shortcuts: (p.shortcuts ?? []).filter((x) => x.id !== id),
+        // マクロとして出力するショートカットは定義が無くなるので「なし」にする
+        ...(r.kind === 'macro' && r.binding ? mapAllBindings(p, (b) => (b.b === r.binding!.b ? { b: 'none', p: [] } : b)) : {}),
+      }));
+    },
+    saveCombo(c) {
+      const { project } = get();
+      if (!project) return;
+      const list = project.combos ?? [];
+      const exists = list.some((x) => x.id === c.id);
+      commit(exists ? `コンボ「${c.name}」を編集` : `コンボ「${c.name}」を追加`, () => ({ combos: exists ? list.map((x) => (x.id === c.id ? c : x)) : [...list, c] }));
+    },
+    removeCombo(id) {
+      const { project } = get();
+      const c = project?.combos?.find((x) => x.id === id);
+      if (!c) return;
+      commit(`コンボ「${c.name}」を削除`, (p) => ({ combos: (p.combos ?? []).filter((x) => x.id !== id) }));
+    },
+    setSensor(layerIndices, sensorIndex, value) {
+      const { project, keyboard } = get();
+      if (!project) return;
+      const count = Math.max(sensorIndex + 1, ...(keyboard.encoders ?? []).map((e) => e.sensorIndex + 1));
+      commit(layerIndices.length > 1 ? `エンコーダーの設定を ${layerIndices.length} レイヤーに適用` : 'エンコーダーの設定を変更', (p) => ({
+        layers: p.layers.map((l, i) => {
+          if (!layerIndices.includes(i)) return l;
+          const sensors: SensorBinding[] = Array.from({ length: count }, (_, k) => l.sensors?.[k] ?? { cw: { b: 'trans', p: [] }, ccw: { b: 'trans', p: [] } });
+          sensors[sensorIndex] = { cw: { ...value.cw, p: [...value.cw.p] }, ccw: { ...value.ccw, p: [...value.ccw.p] } };
+          return { ...l, sensors };
+        }),
       }));
     },
     replaceDevice(device) {
@@ -426,7 +587,7 @@ export function customBehaviorsFor(source: string): BehaviorDef[] {
 
 export function registryFor(project: Project | null, extra: BehaviorDef[] = []): Map<string, BehaviorDef> {
   if (!project) return behaviorRegistry(extra);
-  return behaviorRegistry([...customBehaviorsFor(project.keymapSource), ...project.macros.map(macroBehavior), ...extra]);
+  return behaviorRegistry([...customBehaviorsFor(project.keymapSource), ...project.macros.map(macroBehavior), ...shortcutBehaviors(project.shortcuts), ...extra]);
 }
 
 export function scrollValFor(source: string): number {

@@ -1,6 +1,6 @@
 diff -ru choco-key/original/build.yaml choco-key/studio/build.yaml
---- choco-key/original/build.yaml	2026-11-20 21:44:26.748943500 +0900
-+++ choco-key/studio/build.yaml	2026-11-20 21:44:41.012598400 +0900
+--- choco-key/original/build.yaml	2026-11-22 00:17:08.900636028 +0900
++++ choco-key/studio/build.yaml	2026-11-22 00:17:09.026030013 +0900
 @@ -1,7 +1,12 @@
  ---
 +# ZMK Studio 対応版:
@@ -15,31 +15,340 @@ diff -ru choco-key/original/build.yaml choco-key/studio/build.yaml
      shield: Choco-Key_L rgbled_adapter
    - board: seeeduino_xiao_ble
 diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choco-Key.keymap
---- choco-key/original/config/Choco-Key.keymap	2026-11-20 21:44:26.389645300 +0900
-+++ choco-key/studio/config/Choco-Key.keymap	2026-11-20 21:44:56.339595500 +0900
-@@ -99,7 +99,7 @@
- 
-         layer_4 {
-             bindings = <
--&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &trans  &trans  &trans  &trans  &trans 
-+&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &studio_unlock  &trans  &trans  &trans  &trans 
- &bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &trans  &trans  &trans  &trans  &trans
- &bt BT_CLR      &trans        &trans        &trans        &trans                               &trans  &trans  &trans  &trans  &trans
- &trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans  &trans  &trans  &trans  &trans
-@@ -107,5 +107,10 @@
- 
-             sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+--- choco-key/original/config/Choco-Key.keymap	2026-11-22 00:17:08.862762547 +0900
++++ choco-key/studio/config/Choco-Key.keymap	2026-11-22 00:17:09.033994551 +0900
+@@ -1,3 +1,13 @@
++/*
++ * Choco-Key キーマップ (OS 別 25 レイヤー版 / Choco Factory で生成)
++ *
++ * レイヤー番号 = OS × 5 + OS 内のレイヤー番号
++ *   Windows: 0〜4 / macOS: 5〜9 / Linux: 10〜14 / iOS・iPadOS: 15〜19 / Android: 20〜24
++ * 各 OS の Layer 4 の右手 2 段目に OS 切替キー (&os_sel <BT プロファイル> <レイヤー>) があります。
++ *   Windows = BT 0 / macOS = BT 1 / Linux = BT 2 / iOS = BT 3 / Android = BT 4
++ * 電源投入時はレイヤー 0 (Windows Layer 0) から始まります (ZMK はアクティブなレイヤーを保存しないため)。
++ */
++
+ #include <behaviors.dtsi>
+ #include <dt-bindings/zmk/bt.h>
+ #include <dt-bindings/zmk/keys.h>
+@@ -21,6 +31,25 @@
+             bindings = <&to 0 &macro_param_1to1 &kp MACRO_PLACEHOLDER>;
+             label = "TO_LAYER_0";
          };
 +
-+        // ZMK Studio から追加できる予備レイヤー (通常ビルドでは無視されます)
-+        layer_5 { status = "reserved"; };
-+        layer_6 { status = "reserved"; };
-+        layer_7 { status = "reserved"; };
++        os_sel: os_sel {
++            compatible = "zmk,behavior-macro-two-param";
++            #binding-cells = <2>;
++            display-name = "OS Select";
++            wait-ms = <0>;
++            tap-ms = <10>;
++            // 1 番目のパラメータ = Bluetooth プロファイル、2 番目 = 移動先のレイヤー (&bt の 3 = BT_SEL)
++            bindings = <&macro_param_1to2 &bt 3 MACRO_PLACEHOLDER &macro_param_2to1 &to MACRO_PLACEHOLDER>;
++        };
++
++        os_to: os_to {
++            compatible = "zmk,behavior-macro-one-param";
++            #binding-cells = <1>;
++            display-name = "OS Layer";
++            wait-ms = <0>;
++            tap-ms = <10>;
++            bindings = <&macro_param_1to1 &to MACRO_PLACEHOLDER>;
++        };
      };
- };
+ 
+     behaviors {
+@@ -54,6 +83,7 @@
+         compatible = "zmk,keymap";
+ 
+         default_layer {
++            display-name = "Win 0";
+             bindings = <
+ &kp Q      &kp W           &kp E     &kp R      &kp T                                        &kp Y     &kp U    &kp I           &kp O    &kp P
+ &kp A      &kp S           &kp D     &kp F      &kp G                                        &kp H     &kp J    &kp K           &kp L    &kp MINUS
+@@ -65,6 +95,7 @@
+         };
+ 
+         layer_1 {
++            display-name = "Win 1";
+             bindings = <
+ &kp LC(Y)  &kp LC(Z)  &kp LC(V)  &kp LC(C)  &kp LC(LS(C))                    &trans  &trans  &trans  &trans  &trans
+ &trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
+@@ -76,6 +107,7 @@
+         };
+ 
+         layer_2 {
++            display-name = "Win 2";
+             bindings = <
+ &kp MINUS  &kp N7  &kp N8  &kp N9  &kp PLUS                     &kp LPAR  &kp RPAR  &kp EXCL  &kp AT     &kp HASH
+ &kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET          
+@@ -87,6 +119,7 @@
+         };
+ 
+         layer_3 {
++            display-name = "Win 3";
+             bindings = <
+ &trans  &trans  &trans  &trans  &trans                    &kp F1   &kp F2   &kp F3  &kp F4  &kp F5
+ &trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
+@@ -98,11 +131,252 @@
+         };
+ 
+         layer_4 {
++            display-name = "Win 4";
++            bindings = <
++&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &studio_unlock  &trans       &trans        &trans        &trans
++&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
++&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
++&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_5 {
++            display-name = "Mac 0";
++            bindings = <
++&kp Q      &kp W           &kp E     &kp R      &kp T                                        &kp Y     &kp U    &kp I           &kp O    &kp P
++&kp A      &kp S           &kp D     &kp F      &kp G                                        &kp H     &kp J    &kp K           &kp L    &kp MINUS
++&kp Z      &kp X           &kp C     &kp V      &kp B                                        &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
++&kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 6 LA(GRAVE)  &lt 7 SPACE    &lt 8 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 9 ESC
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_6 {
++            display-name = "Mac 1";
++            bindings = <
++&kp LC(Y)  &kp LC(Z)  &kp LC(V)  &kp LC(C)  &kp LC(LS(C))                    &trans  &trans  &trans  &trans  &trans
++&trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
++&trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
++&trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_7 {
++            display-name = "Mac 2";
++            bindings = <
++&kp MINUS  &kp N7  &kp N8  &kp N9  &kp PLUS                     &kp LPAR  &kp RPAR  &kp EXCL  &kp AT     &kp HASH
++&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
++&kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
++&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_8 {
++            display-name = "Mac 3";
++            bindings = <
++&trans  &trans  &trans  &trans  &trans                    &kp F1   &kp F2   &kp F3  &kp F4  &kp F5
++&trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
++&trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
++&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_9 {
++            display-name = "Mac 4";
++            bindings = <
++&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &studio_unlock  &trans       &trans        &trans        &trans
++&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
++&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
++&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_10 {
++            display-name = "Linux 0";
++            bindings = <
++&kp Q      &kp W           &kp E     &kp R      &kp T                                           &kp Y     &kp U    &kp I           &kp O    &kp P
++&kp A      &kp S           &kp D     &kp F      &kp G                                           &kp H     &kp J    &kp K           &kp L    &kp MINUS
++&kp Z      &kp X           &kp C     &kp V      &kp B                                           &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
++&kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 11 LA(GRAVE)  &lt 12 SPACE    &lt 13 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 14 ESC
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_11 {
++            display-name = "Linux 1";
++            bindings = <
++&kp LC(Y)  &kp LC(Z)  &kp LC(V)  &kp LC(C)  &kp LC(LS(C))                    &trans  &trans  &trans  &trans  &trans
++&trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
++&trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
++&trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_12 {
++            display-name = "Linux 2";
++            bindings = <
++&kp MINUS  &kp N7  &kp N8  &kp N9  &kp PLUS                     &kp LPAR  &kp RPAR  &kp EXCL  &kp AT     &kp HASH
++&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
++&kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
++&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_13 {
++            display-name = "Linux 3";
++            bindings = <
++&trans  &trans  &trans  &trans  &trans                    &kp F1   &kp F2   &kp F3  &kp F4  &kp F5
++&trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
++&trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
++&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_14 {
++            display-name = "Linux 4";
++            bindings = <
++&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &studio_unlock  &trans       &trans        &trans        &trans
++&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
++&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
++&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_15 {
++            display-name = "iOS 0";
++            bindings = <
++&kp Q      &kp W           &kp E     &kp R      &kp T                                           &kp Y     &kp U    &kp I           &kp O    &kp P
++&kp A      &kp S           &kp D     &kp F      &kp G                                           &kp H     &kp J    &kp K           &kp L    &kp MINUS
++&kp Z      &kp X           &kp C     &kp V      &kp B                                           &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
++&kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 16 LA(GRAVE)  &lt 17 SPACE    &lt 18 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 19 ESC
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_16 {
++            display-name = "iOS 1";
++            bindings = <
++&kp LC(Y)  &kp LC(Z)  &kp LC(V)  &kp LC(C)  &kp LC(LS(C))                    &trans  &trans  &trans  &trans  &trans
++&trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
++&trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
++&trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_17 {
++            display-name = "iOS 2";
++            bindings = <
++&kp MINUS  &kp N7  &kp N8  &kp N9  &kp PLUS                     &kp LPAR  &kp RPAR  &kp EXCL  &kp AT     &kp HASH
++&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
++&kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
++&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_18 {
++            display-name = "iOS 3";
++            bindings = <
++&trans  &trans  &trans  &trans  &trans                    &kp F1   &kp F2   &kp F3  &kp F4  &kp F5
++&trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
++&trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
++&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_19 {
++            display-name = "iOS 4";
++            bindings = <
++&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &studio_unlock  &trans       &trans        &trans        &trans
++&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
++&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
++&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_20 {
++            display-name = "And 0";
++            bindings = <
++&kp Q      &kp W           &kp E     &kp R      &kp T                                           &kp Y     &kp U    &kp I           &kp O    &kp P
++&kp A      &kp S           &kp D     &kp F      &kp G                                           &kp H     &kp J    &kp K           &kp L    &kp MINUS
++&kp Z      &kp X           &kp C     &kp V      &kp B                                           &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
++&kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 21 LA(GRAVE)  &lt 22 SPACE    &lt 23 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 24 ESC
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_21 {
++            display-name = "And 1";
++            bindings = <
++&kp LC(Y)  &kp LC(Z)  &kp LC(V)  &kp LC(C)  &kp LC(LS(C))                    &trans  &trans  &trans  &trans  &trans
++&trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
++&trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
++&trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_22 {
++            display-name = "And 2";
++            bindings = <
++&kp MINUS  &kp N7  &kp N8  &kp N9  &kp PLUS                     &kp LPAR  &kp RPAR  &kp EXCL  &kp AT     &kp HASH
++&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
++&kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
++&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_23 {
++            display-name = "And 3";
++            bindings = <
++&trans  &trans  &trans  &trans  &trans                    &kp F1   &kp F2   &kp F3  &kp F4  &kp F5
++&trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
++&trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
++&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
++            >;
++
++            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++        };
++
++        layer_24 {
++            display-name = "And 4";
+             bindings = <
+-&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &trans  &trans  &trans  &trans  &trans 
+-&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &trans  &trans  &trans  &trans  &trans
+-&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans  &trans  &trans  &trans  &trans
+-&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans  &trans  &trans  &trans  &trans
++&bt BT_SEL 4    &bt BT_SEL 3  &bt BT_SEL 2  &bt BT_SEL 1  &bt BT_SEL 0                         &studio_unlock  &trans       &trans        &trans        &trans
++&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
++&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
++&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
+             >;
+ 
+             sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
 diff -ru choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi
---- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-20 21:44:26.591752600 +0900
-+++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-20 21:44:56.327935600 +0900
+--- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 00:17:08.819545383 +0900
++++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 00:17:09.063717635 +0900
 @@ -1,9 +1,63 @@
  #include <dt-bindings/zmk/matrix_transform.h>
 +#include <physical_layouts.dtsi>
@@ -106,8 +415,8 @@ diff -ru choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi choco
  
      default_transform: keymap_transform_0 {
 diff -ru choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml
---- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-20 21:44:26.530583900 +0900
-+++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-20 21:44:56.354032100 +0900
+--- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 00:17:08.836636051 +0900
++++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 00:17:09.056635973 +0900
 @@ -6,3 +6,4 @@
  requires: [seeeduino_xiao_ble]
  features:

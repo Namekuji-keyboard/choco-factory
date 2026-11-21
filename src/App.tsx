@@ -4,6 +4,9 @@ import { useEditor } from './state/editor';
 import { useDevice } from './state/device';
 import { Header } from './components/Header';
 import { LayerBar } from './components/LayerBar';
+import { OsBar } from './components/OsBar';
+import { CombosDialog, EncoderDialog, ShortcutsDialog } from './components/Features';
+import { absLayer, splitLayerIndex } from './model/os';
 import { KeyboardView } from './components/KeyboardView';
 import { KeyPanel } from './components/KeyPanel';
 import { KeyPicker } from './components/KeyPicker';
@@ -21,6 +24,8 @@ export default function App() {
   const dev = useDevice((s) => s.dev);
   const apply = useDevice((s) => s.apply);
   const [dialog, setDialog] = useState<DialogName>(null);
+  const [feature, setFeature] = useState<'shortcuts' | 'combos' | { encoder: number } | null>(null);
+  const isOs = useEditor((s) => !!s.project?.os);
 
   useEffect(() => {
     init().catch((e) => {
@@ -61,7 +66,11 @@ export default function App() {
       else if (mod && k === 'a') s.selectAll();
       else if ((e.key === 'Delete' || e.key === 'Backspace') && s.selected.length) s.assign({ b: 'trans', p: [] }, '透過に設定');
       else if (e.key === 'Escape') s.clearSelection();
-      else if (e.altKey && /^[0-9]$/.test(e.key) && s.project && Number(e.key) < s.project.layers.length) s.setLayerIndex(Number(e.key));
+      else if (e.altKey && /^[0-9]$/.test(e.key) && s.project?.os && Number(e.key) < s.project.os.layersPerOs) {
+        // Alt + 数字: 表示中の OS の Layer n
+        const os = s.project.os;
+        s.setLayerIndex(absLayer(os, splitLayerIndex(os, s.layerIndex).os, Number(e.key)));
+      } else if (e.altKey && /^[0-9]$/.test(e.key) && s.project && Number(e.key) < s.project.layers.length) s.setLayerIndex(Number(e.key));
       else return;
       e.preventDefault();
     };
@@ -94,14 +103,15 @@ export default function App() {
       <main className="scroll-thin min-h-0 flex-1 overflow-y-auto lg:flex lg:overflow-hidden">
         <div className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
           <div className="space-y-3 px-3 pt-3 sm:px-5 sm:pt-4">
-            <LayerBar />
+            {isOs ? <OsBar onShortcuts={() => setFeature('shortcuts')} onCombos={() => setFeature('combos')} /> : <LayerBar />}
             <div className="panel overflow-x-auto px-2 py-4 sm:px-6 sm:py-5">
-              <KeyboardView />
+              <KeyboardView onEncoder={(i) => setFeature({ encoder: i })} />
               <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-muted">
                 <span>{kb.name}</span>
                 <span>{kb.controller}</span>
                 <span>ZMK {kb.zmkVersion}</span>
                 <span>▽ = 透過</span>
+                <span>◎ = エンコーダー (クリックで設定)</span>
                 {dev && (
                   <span className="inline-flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-warn" /> = キーボードに未適用
@@ -136,6 +146,9 @@ export default function App() {
           void apply();
         }}
       />
+      {feature === 'shortcuts' && <ShortcutsDialog onClose={() => setFeature(null)} />}
+      {feature === 'combos' && <CombosDialog onClose={() => setFeature(null)} />}
+      {feature && typeof feature === 'object' && <EncoderDialog sensorIndex={feature.encoder} onClose={() => setFeature(null)} />}
       <LockedDialog />
       <PendingLoadDialog />
       <Toasts />

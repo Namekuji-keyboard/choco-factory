@@ -1,4 +1,4 @@
-import type { Binding, KeyboardDefinition, Layer, MacroDef } from '../model/types';
+import type { Binding, ComboDef, KeyboardDefinition, Layer, MacroDef, SensorBinding } from '../model/types';
 import {
   BL_COMMANDS,
   BT_COMMANDS,
@@ -55,6 +55,9 @@ export interface ParsedLayer {
   bindingsProp?: DtsProp;
   bindings: ParsedBinding[];
   sensorBindings?: string;
+  sensorBindingsProp?: DtsProp;
+  /** sensor-bindings を解析できた場合の割り当て */
+  sensors?: SensorBinding[];
 }
 
 export interface ParsedKeymap {
@@ -68,6 +71,13 @@ export interface ParsedKeymap {
   macrosNode?: DtsNode;
   /** マウススクロールの既定量 (キーマップで上書きされていればその値) */
   scrollVal: number;
+  /** zmk,behavior-sensor-rotate のビヘイビア (ラベル → 時計回り / 反時計回り) */
+  sensorRotates: Map<string, SensorBinding>;
+  behaviorsNode?: DtsNode;
+  combosNode?: DtsNode;
+  combos: ComboDef[];
+  /** ファイル内で定義されているすべてのラベル */
+  labels: Set<string>;
 }
 
 const parseCache = new Map<string, ParsedKeymap>();
@@ -88,11 +98,19 @@ function parseKeymapUncached(text: string): ParsedKeymap {
 
   let keymapNode: DtsNode | undefined;
   let macrosNode: DtsNode | undefined;
+  let behaviorsNode: DtsNode | undefined;
+  let combosNode: DtsNode | undefined;
   const behaviorNodes: DtsNode[] = [];
+  const sensorNodes: DtsNode[] = [];
+  const labels = new Set<string>();
   walk(roots, (n) => {
     const compat = stringProp(n, 'compatible');
+    n.labels.forEach((l) => labels.add(l));
     if (compat === 'zmk,keymap') keymapNode = n;
+    if (compat === 'zmk,combos' && !combosNode) combosNode = n;
     if (n.name === 'macros' && !macrosNode) macrosNode = n;
+    if (n.name === 'behaviors' && !compat && !behaviorsNode) behaviorsNode = n;
+    if (compat === 'zmk,behavior-sensor-rotate' && n.labels.length) sensorNodes.push(n);
     if (compat?.startsWith('zmk,behavior-') && n.labels.length && findProp(n, '#binding-cells')) behaviorNodes.push(n);
   });
   if (!keymapNode) throw new Error('キーマップ (compatible = "zmk,keymap") が見つかりません');
@@ -131,6 +149,16 @@ function parseKeymapUncached(text: string): ParsedKeymap {
     def.params = paramsForCompatible(def.compatible!, cells, childParams);
   }
 
+  // エンコーダー用ビヘイビア (sensor-rotate)
+  const sensorRotates = new Map<string, SensorBinding>();
+  for (const n of sensorNodes) {
+    const v = findProp(n, 'bindings')?.value;
+    const groups = v ? groupBindings(tokenizeCells(v)) : [];
+    if (groups.length !== 2) continue;
+    const [cw, ccw] = groups.map((g) => toBinding({ behavior: g.behavior, params: g.params, text: '' }, macros));
+    sensorRotates.set(n.labels[0], { cw, ccw });
+  }
+
   const layers: ParsedLayer[] = [];
   const reservedLayers: DtsNode[] = [];
   for (const child of keymapNode.children) {
@@ -147,7 +175,10 @@ function parseKeymapUncached(text: string): ParsedKeymap {
       bindingsProp,
       bindings: groups.map((g) => ({ behavior: g.behavior, params: g.params, text: ['&' + g.behavior, ...g.params].join(' ') })),
       sensorBindings: findProp(child, 'sensor-bindings')?.value?.trim(),
+      sensorBindingsProp: findProp(child, 'sensor-bindings'),
     });
+    const last = layers[layers.length - 1];
+    if (last.sensorBindings) last.sensors = parseSensorBindings(last.sensorBindings, sensorRotates, macros);
   }
 
   // 外部モジュール (#include で読み込まれる dtsi) のビヘイビア: 使われ方からパラメータ数を推定して登録
@@ -177,7 +208,69 @@ function parseKeymapUncached(text: string): ParsedKeymap {
     /* 既定値のまま */
   }
 
-  return { text, roots, macros, keymapNode, layers, reservedLayers, customBehaviors, macrosNode, scrollVal };
+  // コンボ
+  const combos: ComboDef[] = [];
+  for (const c of combosNode?.children ?? []) {
+    const kp = findProp(c, 'key-positions')?.value;
+    const bp = findProp(c, 'bindings')?.value;
+    if (!kp || !bp) continue;
+    const g = groupBindings(tokenizeCells(bp))[0];
+    if (!g) continue;
+    let positions: number[] = [];
+    let layerIds: number[] = [];
+    try {
+      positions = splitCells(expandMacros(kp.replace(/[<>]/g, ' '), macros)).map(evalIntExpr);
+      const lp = findProp(c, 'layers')?.value;
+      layerIds = lp ? splitCells(expandMacros(lp.replace(/[<>]/g, ' '), macros)).map(evalIntExpr) : [];
+    } catch {
+      continue;
+    }
+    const tm = findProp(c, 'timeout-ms')?.value;
+    combos.push({
+      id: `file-${c.name}`,
+      name: c.name,
+      positions,
+      binding: toBinding({ behavior: g.behavior, params: g.params, text: '' }, macros),
+      layers: layerIds,
+      timeoutMs: tm ? parseInt(/\d+/.exec(tm)?.[0] ?? '50', 10) : 50,
+    });
+  }
+
+  return { text, roots, macros, keymapNode, layers, reservedLayers, customBehaviors, macrosNode, scrollVal, sensorRotates, behaviorsNode, combosNode, combos, labels };
+}
+
+const TRANS_BINDING: Binding = { b: 'trans', p: [] };
+
+function parseSensorBindings(text: string, rotates: Map<string, SensorBinding>, macros: MacroTable): SensorBinding[] | undefined {
+  const out: SensorBinding[] = [];
+  for (const g of groupBindings(tokenizeCells(text))) {
+    if (g.behavior === 'trans' && !g.params.length) out.push({ cw: { ...TRANS_BINDING }, ccw: { ...TRANS_BINDING } });
+    else if (rotates.has(g.behavior) && !g.params.length) {
+      const r = rotates.get(g.behavior)!;
+      out.push({ cw: { ...r.cw, p: [...r.cw.p] }, ccw: { ...r.ccw, p: [...r.ccw.p] } });
+    } else if (g.behavior === 'inc_dec_kp' && g.params.length === 2) {
+      try {
+        const [a, b] = evaluateParams(g.params, macros);
+        out.push({ cw: { b: 'kp', p: [a] }, ccw: { b: 'kp', p: [b] } });
+      } catch {
+        return undefined;
+      }
+    } else return undefined;
+  }
+  return out;
+}
+
+/** エンコーダーの割り当てが同じか (省略された末尾のエンコーダー・sensor-bindings 無しは「透過」として比較) */
+export function sensorsEqual(a?: SensorBinding[], b?: SensorBinding[]): boolean {
+  const x = a ?? [];
+  const y = b ?? [];
+  const T = { cw: TRANS_BINDING, ccw: TRANS_BINDING };
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const p = x[i] ?? T;
+    const q = y[i] ?? T;
+    if (!bindingsEqual(p.cw, q.cw) || !bindingsEqual(p.ccw, q.ccw)) return false;
+  }
+  return true;
 }
 
 export function behaviorRegistry(custom: BehaviorDef[] = []): Map<string, BehaviorDef> {
@@ -199,6 +292,7 @@ export function layersFromParsed(parsed: ParsedKeymap): Layer[] {
     id: i,
     name: l.displayName ?? `Layer ${i}`,
     bindings: l.bindings.map((b) => toBinding(b, parsed.macros)),
+    ...(l.sensors ? { sensors: l.sensors.map((x) => ({ cw: { ...x.cw, p: [...x.cw.p] }, ccw: { ...x.ccw, p: [...x.ccw.p] } })) } : {}),
   }));
 }
 
@@ -343,19 +437,41 @@ function lineIndent(text: string, offset: number): string {
 
 const quote = (s: string) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
+export interface ExportOptions {
+  /** コンボ (undefined = ファイルの記述をそのまま使う) */
+  combos?: ComboDef[];
+  /** ショートカットなど、このアプリで定義を追加するビヘイビア */
+  extraBehaviors?: BehaviorDef[];
+  /** OS 切替マクロ (&os_sel / &os_to) を常に含める */
+  osMacros?: boolean;
+}
+
+const indentBlock = (text: string, indent: string) =>
+  text
+    .split('\n')
+    .map((l) => (l ? indent + l : l))
+    .join('\n');
+
 export function exportKeymap(
   source: string,
   layers: Layer[],
   kb: Pick<KeyboardDefinition, 'rowSizes' | 'leftCounts'>,
   macros: MacroDef[] = [],
+  opts: ExportOptions = {},
 ): ExportResult {
   const parsed = parseKeymap(source);
   const warnings: string[] = [];
-  const registry = behaviorRegistry([...parsed.customBehaviors, ...macros.map(macroBehavior)]);
+  const extra = opts.extraBehaviors ?? [];
+  const registry = behaviorRegistry([...parsed.customBehaviors, ...macros.map(macroBehavior), ...extra]);
   const layerIndexById = new Map(layers.map((l, i) => [l.id, i]));
   const ctx: FormatContext = { behaviors: registry, layerIndexById, scrollVal: parsed.scrollVal };
   const edits: Edit[] = [];
   const text = parsed.text;
+  const used = new Set<string>();
+  const fmt = (b: Binding) => {
+    used.add(b.b);
+    return formatBinding(remapLayers(b, registry.get(b.b), layerIndexById), ctx);
+  };
 
   // 存在しないレイヤーを参照していないか
   layers.forEach((l) =>
@@ -369,6 +485,55 @@ export function exportKeymap(
       });
     }),
   );
+
+  // ---- エンコーダー (sensor-bindings) ----
+  const rotateNodes: string[] = [];
+  const rotateLabels = new Map<string, string>(); // 内容 → ラベル
+  for (const [label, r] of parsed.sensorRotates) rotateLabels.set(`${fmt(r.cw)}|${fmt(r.ccw)}`, label);
+  let encCounter = 0;
+  /**
+   * sensor-bindings の出力。ZMK v0.2.1 では sensor-bindings に &trans を書けない (sensor 用のビヘイビアではない) ため、
+   * 透過は「末尾のエンコーダーを省略する / sensor-bindings 自体を書かない」ことで表す。
+   * 戻り値: 出力する値 (例: " <&enc_1>, <&enc_2>")、null = sensor-bindings を書かない (すべて透過)
+   */
+  const sensorText = (layer: Layer): string | null => {
+    const list = layer.sensors ?? [];
+    const isTrans = (sb: SensorBinding) => sb.cw.b === 'trans' && sb.ccw.b === 'trans';
+    let n = list.length;
+    while (n > 0 && isTrans(list[n - 1])) n--;
+    if (n === 0) return null;
+    const parts = list.slice(0, n).map((sb, idx) => {
+      let { cw, ccw } = sb;
+      if (cw.b === 'trans' || ccw.b === 'trans') {
+        warnings.push(
+          isTrans(sb)
+            ? `${layer.name} のエンコーダー ${idx}: 後ろのエンコーダーが透過でないため、このエンコーダーだけを透過にはできません。「なし」として出力しました`
+            : `${layer.name} のエンコーダー ${idx}: 片方の回転方向だけを透過にはできないため「なし」として出力しました`,
+        );
+        if (cw.b === 'trans') cw = { b: 'none', p: [] };
+        if (ccw.b === 'trans') ccw = { b: 'none', p: [] };
+      }
+      const key = `${fmt(cw)}|${fmt(ccw)}`;
+      let label = rotateLabels.get(key);
+      if (!label) {
+        do label = `enc_${++encCounter}`;
+        while (parsed.labels.has(label));
+        rotateLabels.set(key, label);
+        rotateNodes.push(
+          [
+            `${label}: ${label} {`,
+            `    compatible = "zmk,behavior-sensor-rotate";`,
+            `    #sensor-binding-cells = <0>;`,
+            `    bindings = <${fmt(cw)}>, <${fmt(ccw)}>; // 時計回り, 反時計回り`,
+            `    tap-ms = <20>;`,
+            `};`,
+          ].join('\n'),
+        );
+      }
+      return `<&${label}>`;
+    });
+    return ' ' + parts.join(', ');
+  };
 
   layers.forEach((layer, i) => {
     const src = parsed.layers[i];
@@ -389,6 +554,7 @@ export function exportKeymap(
     // バインディング
     const srcBindings = src.bindings.map((b) => toBinding(b, parsed.macros));
     const out = layer.bindings.map((b, pos) => {
+      used.add(b.b);
       const fileLevel = remapLayers(b, registry.get(b.b), layerIndexById);
       const orig = srcBindings[pos];
       if (orig && bindingsEqual(fileLevel, orig)) return src.bindings[pos].text;
@@ -398,6 +564,25 @@ export function exportKeymap(
     if (!unchanged) {
       const value = ` <\n${formatGrid(out, kb)}\n${lineIndent(text, src.bindingsProp?.start ?? src.node.start)}>`;
       if (src.bindingsProp) edits.push({ start: src.bindingsProp.valueStart, end: src.bindingsProp.valueEnd, text: value });
+    }
+    // エンコーダー
+    if (layer.sensors && !(src.sensors && sensorsEqual(layer.sensors, src.sensors))) {
+      const st = sensorText(layer);
+      if (st === null) {
+        // すべて透過: sensor-bindings を削除
+        const sp = src.sensorBindingsProp;
+        if (sp) {
+          const ls = text.lastIndexOf('\n', sp.start - 1);
+          edits.push({ start: ls >= 0 ? ls : sp.start, end: sp.end, text: '' });
+        }
+      } else {
+        if (src.sensorBindingsProp) edits.push({ start: src.sensorBindingsProp.valueStart, end: src.sensorBindingsProp.valueEnd, text: st });
+        else {
+          const at = src.node.bodyEnd;
+          const indent = lineIndent(text, src.node.start) + '    ';
+          edits.push({ start: at, end: at, text: `\n${indent}sensor-bindings =${st};\n${lineIndent(text, src.node.start)}` });
+        }
+      }
     }
   });
 
@@ -413,42 +598,91 @@ export function exportKeymap(
     const last = parsed.layers[parsed.layers.length - 1]?.node;
     const at = last ? last.end : parsed.keymapNode.bodyStart;
     const indent = last ? lineIndent(text, last.start) : '        ';
-    const used = new Set(parsed.keymapNode.children.map((c) => c.name));
+    const usedNames = new Set(parsed.keymapNode.children.map((c) => c.name));
     let chunk = '';
     for (let i = parsed.layers.length; i < layers.length; i++) {
       let name = `layer_${i}`;
-      while (used.has(name)) name += '_';
-      used.add(name);
+      while (usedNames.has(name)) name += '_';
+      usedNames.add(name);
       const l = layers[i];
-      const cells = l.bindings.map((b) => formatBinding(remapLayers(b, registry.get(b.b), layerIndexById), ctx));
+      const cells = l.bindings.map(fmt);
       chunk += `\n\n${indent}${name} {\n${indent}    display-name = ${quote(l.name)};\n${indent}    bindings = <\n${formatGrid(cells, kb)}\n${indent}    >;\n`;
-      const sensors = parsed.layers[parsed.layers.length - 1]?.sensorBindings;
+      const sensors = l.sensors ? sensorText(l)?.trim() : parsed.layers[parsed.layers.length - 1]?.sensorBindings;
       if (sensors) chunk += `\n${indent}    sensor-bindings = ${sensors};\n`;
       chunk += `${indent}};`;
     }
     edits.push({ start: at, end: at, text: chunk });
   }
 
-  // マクロ
-  if (macros.length) {
-    const existing = new Set<string>();
-    walk(parsed.roots, (n) => n.labels.forEach((l) => existing.add(l)));
-    const nodes = macros
-      .filter((m) => {
-        if (existing.has(m.label)) {
-          warnings.push(`マクロ ${m.label} は既に定義されているため出力しませんでした`);
-          return false;
-        }
-        return true;
-      })
-      .map((m) => macroNodeText(m, '        '));
-    if (nodes.length) {
-      if (parsed.macrosNode) {
-        edits.push({ start: parsed.macrosNode.bodyEnd, end: parsed.macrosNode.bodyEnd, text: `\n${nodes.join('\n\n')}\n    ` });
-      } else {
-        const at = parsed.keymapNode.start;
-        edits.push({ start: at, end: at, text: `macros {\n${nodes.join('\n\n')}\n    };\n\n    ` });
+  // ---- コンボ ----
+  if (opts.combos && !combosEqual(opts.combos, parsed.combos)) {
+    const lines: string[] = ['combos {', '    compatible = "zmk,combos";'];
+    const names = new Set<string>();
+    opts.combos.forEach((c, i) => {
+      if (c.positions.length < 2) {
+        warnings.push(`コンボ「${c.name}」: キーを 2 個以上選んでください (出力しませんでした)`);
+        return;
       }
+      let name = /^[a-z][a-z0-9_]*$/i.test(c.name) ? c.name.toLowerCase() : `combo_${i + 1}`;
+      while (names.has(name)) name += '_';
+      names.add(name);
+      const layerIdx = c.layers.map((id) => layerIndexById.get(id)).filter((v): v is number => v !== undefined);
+      lines.push('', `    ${name} { // ${c.name.replace(/[\r\n]/g, ' ')}`);
+      lines.push(`        timeout-ms = <${Math.max(1, Math.round(c.timeoutMs))}>;`);
+      lines.push(`        key-positions = <${c.positions.join(' ')}>;`);
+      lines.push(`        bindings = <${fmt(c.binding)}>;`);
+      if (layerIdx.length) lines.push(`        layers = <${layerIdx.join(' ')}>;`);
+      lines.push('    };');
+    });
+    lines.push('};');
+    const block = lines.join('\n');
+    if (parsed.combosNode) {
+      const n = parsed.combosNode;
+      edits.push({ start: n.start, end: n.end, text: indentBlock(block, lineIndent(text, n.start)).trimStart() });
+    } else if (opts.combos.length) {
+      const at = parsed.keymapNode.start;
+      edits.push({ start: at, end: at, text: `${indentBlock(block, '    ').trimStart()}\n\n    ` });
+    }
+  } else {
+    for (const c of parsed.combos) used.add(c.binding.b);
+  }
+
+  // ---- マクロ・追加ビヘイビアの定義 ----
+  const macroNodes: string[] = [];
+  const existing = parsed.labels;
+  for (const m of macros) {
+    if (existing.has(m.label)) {
+      warnings.push(`マクロ ${m.label} は既に定義されているため出力しませんでした`);
+      continue;
+    }
+    macroNodes.push(macroNodeText(m, ''));
+  }
+  const injected = new Set<string>();
+  for (const def of registry.values()) {
+    if (!def.definition || existing.has(def.label) || injected.has(def.label)) continue;
+    const isExtra = extra.some((e) => e.label === def.label);
+    const isOsMacro = def.label === 'os_sel' || def.label === 'os_to';
+    if (used.has(def.label) || isExtra || (isOsMacro && opts.osMacros)) {
+      injected.add(def.label);
+      macroNodes.push(def.definition);
+    }
+  }
+  if (macroNodes.length) {
+    const body = indentBlock(macroNodes.join('\n\n'), '        ');
+    if (parsed.macrosNode) {
+      edits.push(appendToNode(parsed.macrosNode, body));
+    } else {
+      const at = parsed.keymapNode.start;
+      edits.push({ start: at, end: at, text: `macros {\n${body}\n    };\n\n    ` });
+    }
+  }
+  if (rotateNodes.length) {
+    const body = indentBlock(rotateNodes.join('\n\n'), '        ');
+    if (parsed.behaviorsNode) {
+      edits.push(appendToNode(parsed.behaviorsNode, body));
+    } else {
+      const at = parsed.keymapNode.start;
+      edits.push({ start: at, end: at, text: `behaviors {\n${body}\n    };\n\n    ` });
     }
   }
 
@@ -456,6 +690,27 @@ export function exportKeymap(
   let result = text;
   for (const e of edits) result = result.slice(0, e.start) + e.text + result.slice(e.end);
   return { text: result, warnings };
+}
+
+/** ノードの最後の子ノードの後ろに追加 */
+function appendToNode(node: DtsNode, body: string): Edit {
+  const last = node.children[node.children.length - 1];
+  if (last) return { start: last.end, end: last.end, text: `\n\n${body}` };
+  return { start: node.bodyEnd, end: node.bodyEnd, text: `\n${body}\n    ` };
+}
+
+export function combosEqual(a: ComboDef[], b: ComboDef[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (c, i) =>
+        c.name === b[i].name &&
+        c.timeoutMs === b[i].timeoutMs &&
+        c.positions.join() === b[i].positions.join() &&
+        c.layers.join() === b[i].layers.join() &&
+        bindingsEqual(c.binding, b[i].binding),
+    )
+  );
 }
 
 export function macroBehavior(m: MacroDef): BehaviorDef {
@@ -477,7 +732,7 @@ function macroNodeText(m: MacroDef, indent: string): string {
     `${indent}${m.label}: ${m.label} {`,
     `${indent}    compatible = "zmk,behavior-macro";`,
     `${indent}    #binding-cells = <0>;`,
-    `${indent}    display-name = ${quote(m.name)};`,
+    `${indent}    display-name = ${quote(m.label)}; // ${m.name.replace(/[\r\n]/g, ' ')}`,
     `${indent}    wait-ms = <${m.waitMs}>;`,
     `${indent}    tap-ms = <${m.tapMs}>;`,
     `${indent}    bindings = <&macro_tap ${keys}>;`,

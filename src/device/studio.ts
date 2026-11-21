@@ -8,7 +8,6 @@
 import { call_rpc, create_rpc_connection, type RpcConnection, type Notification } from '@zmkfirmware/zmk-studio-ts-client';
 import type { RpcTransport } from '@zmkfirmware/zmk-studio-ts-client/transport/index';
 import { connect as connectSerial } from '@zmkfirmware/zmk-studio-ts-client/transport/serial';
-import { connect as connectGatt } from '@zmkfirmware/zmk-studio-ts-client/transport/gatt';
 import { LockState } from '@zmkfirmware/zmk-studio-ts-client/core';
 import { ErrorConditions } from '@zmkfirmware/zmk-studio-ts-client/meta';
 import type { GetBehaviorDetailsResponse } from '@zmkfirmware/zmk-studio-ts-client/behaviors';
@@ -18,15 +17,16 @@ import { SaveChangesErrorCode, SetLayerBindingResponse } from '@zmkfirmware/zmk-
 export { LockState };
 export type { Keymap, PhysicalLayouts, BehaviorBinding, GetBehaviorDetailsResponse };
 
+/**
+ * 接続方法。'ble' は将来用 (Web Bluetooth は Windows / macOS で ZMK 公式に未対応のため、現在は UI から使用しない。
+ * transports/ble.ts を参照)。
+ */
 export type TransportKind = 'usb' | 'ble';
 
 export class DeviceError extends Error {}
 
 export function isSerialSupported(): boolean {
   return typeof navigator !== 'undefined' && 'serial' in navigator;
-}
-export function isBluetoothSupported(): boolean {
-  return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
 }
 
 type Request = Parameters<typeof call_rpc>[1];
@@ -64,11 +64,11 @@ export class StudioDevice {
     void this.readNotifications();
   }
 
-  /** ブラウザのデバイス選択ダイアログを開いて接続する */
+  /** ブラウザのデバイス選択ダイアログを開いて USB (Web Serial) で接続する */
   static async connect(kind: TransportKind, events: StudioEvents = {}): Promise<StudioDevice> {
-    if (kind === 'usb' && !isSerialSupported()) throw new DeviceError('このブラウザは Web Serial API に対応していません。Chrome または Edge をお使いください。');
-    if (kind === 'ble' && !isBluetoothSupported()) throw new DeviceError('このブラウザは Web Bluetooth API に対応していません。Chrome または Edge をお使いください。');
-    const transport = kind === 'usb' ? await connectSerial() : await connectGatt();
+    if (kind !== 'usb') throw new DeviceError('このアプリでは USB 接続のみ対応しています (Bluetooth での編集は Windows / macOS のブラウザでは ZMK 公式に未対応のため)。');
+    if (!isSerialSupported()) throw new DeviceError('このブラウザは Web Serial API に対応していません。Chrome または Edge をお使いください。');
+    const transport = await connectSerial();
     return new StudioDevice(transport, kind, events);
   }
 

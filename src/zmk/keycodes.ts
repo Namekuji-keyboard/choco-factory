@@ -1,4 +1,5 @@
 import { RAW_KEYCODES } from './keycodes.generated';
+import { keycodeDescriptionJa } from './keycodes.ja';
 
 /**
  * ZMK のキーコード (HID usage) の表示・検索・分類。
@@ -270,7 +271,7 @@ export function keycodeLabel(value: number, host: HostLayout = 'us'): string {
 
 /** 検索用テキスト */
 export function keycodeSearchText(k: Keycode): string {
-  return [...k.names, k.comment, keycodeLabel(k.value), keycodeLabel(k.value, 'jis'), KEYCODE_CATEGORY_LABELS[k.category]]
+  return [...k.names, k.comment, keycodeDescriptionJa(k), keycodeLabel(k.value), keycodeLabel(k.value, 'jis'), KEYCODE_CATEGORY_LABELS[k.category]]
     .join(' ')
     .toLowerCase();
 }

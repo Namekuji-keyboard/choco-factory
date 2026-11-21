@@ -33,6 +33,8 @@ interface SimState {
 }
 
 export interface SimulatorOptions {
+  /** ファームウェアに入っているキーマップ (省略時は同梱の Studio 版) */
+  keymapSource?: string;
   locked?: boolean;
   /** フラッシュの代わりに保存する先 (省略時はメモリのみ) */
   storage?: { load(): string | null; save(v: string): void; clear(): void };
@@ -52,7 +54,7 @@ export class StudioSimulator {
     private opts: SimulatorOptions = {},
   ) {
     this.lock = opts.locked ? LockState.ZMK_STUDIO_CORE_LOCK_STATE_LOCKED : LockState.ZMK_STUDIO_CORE_LOCK_STATE_UNLOCKED;
-    const parsed = parseKeymap(kb.files.studio[kb.keymapPath]);
+    const parsed = parseKeymap(opts.keymapSource ?? kb.files.studio[kb.keymapPath]);
     const defs = [...BUILTIN_BEHAVIORS, ...parsed.customBehaviors];
     // ZMK と同様、ビヘイビア ID はデバイスごとのローカル ID (ここでは連番)
     this.behaviors = defs.map((d, i) => ({ id: 100 + i, displayName: d.displayName, params: d.params }));

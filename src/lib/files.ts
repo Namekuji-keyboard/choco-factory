@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import type { KeyboardDefinition, Project } from '../model/types';
 import type { ProjectFile } from '../model/project';
 import { exportKeymap } from '../zmk/keymap';
+import { shortcutBehaviors } from '../model/shortcuts';
 
 export function download(name: string, data: Blob | string, type = 'text/plain') {
   const blob = typeof data === 'string' ? new Blob([data], { type: `${type};charset=utf-8` }) : data;
@@ -18,7 +19,11 @@ export function download(name: string, data: Blob | string, type = 'text/plain')
 export const safeName = (s: string) => s.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60) || 'keymap';
 
 export function buildKeymap(project: Project, kb: KeyboardDefinition) {
-  return exportKeymap(project.keymapSource, project.layers, kb, project.macros);
+  return exportKeymap(project.keymapSource, project.layers, kb, project.macros, {
+    combos: project.combos,
+    extraBehaviors: shortcutBehaviors(project.shortcuts),
+    osMacros: !!project.os,
+  });
 }
 
 export type ZipVariant = 'studio' | 'original';
@@ -29,7 +34,8 @@ const README = (kb: KeyboardDefinition, variant: ZipVariant, project: Project) =
 - 出力日時: ${new Date().toLocaleString('ja-JP')}
 - 構成: ${variant === 'studio' ? 'ZMK Studio 対応版 (Web から直接キーマップを書き込めます)' : '元の構成 (ZMK Studio 無効)'}
 - ZMK: ${kb.zmkVersion}
-
+${project.os ? `- キーマップ: OS 別 ${project.layers.length} レイヤー (Windows 0〜4 / macOS 5〜9 / Linux 10〜14 / iOS 15〜19 / Android 20〜24)
+` : ''}
 ## ビルド方法
 
 1. このフォルダの中身を GitHub のリポジトリ (zmk-config) にコミットして push します。
@@ -37,7 +43,7 @@ const README = (kb: KeyboardDefinition, variant: ZipVariant, project: Project) =
 3. 各 XIAO nRF52840 をダブルリセットで書き込みモードにし、対応する .uf2 をドラッグ & ドロップします。
    - 右手 (セントラル): ファイル名に Choco-Key_R を含む .uf2
    - 左手 (ペリフェラル): ファイル名に Choco-Key_L を含む .uf2
-   - 初回 (ZMK Studio 対応版に切り替えるとき) は左右とも書き込んでください。キーマップは右手 (セントラル) だけが持つため、以後キーマップを変えるだけなら左手の再書き込みは不要です。
+   - 初回 (ZMK Studio 対応版・OS 別 25 レイヤー版に切り替えるとき) は左右とも書き込んでください。キーマップは右手 (セントラル) だけが持つため、以後キーマップを変えるだけなら左手の再書き込みは不要です。
 ${variant === 'studio' ? `
 ## ZMK Studio について
 
@@ -45,6 +51,7 @@ ${variant === 'studio' ? `
 - 編集を許可するには、キーボード上で &studio_unlock (Layer 4 の右手最上段左端) を押します。
 - Studio で保存したキーマップはフラッシュに保存され、以後このファイルのキーマップより優先されます。
   ファイル側の変更を反映したいときは、Web アプリの「キーボードを初期化」を実行してください。
+- エンコーダーの割り当て・コンボ・ショートカット (複数キーのマクロ) は ZMK Studio では書き込めないため、このファイルでビルドして反映します。
 ` : ''}`;
 
 export async function buildZip(project: Project, kb: KeyboardDefinition, variant: ZipVariant): Promise<{ blob: Blob; warnings: string[] }> {
@@ -60,7 +67,7 @@ export async function buildZip(project: Project, kb: KeyboardDefinition, variant
 }
 
 export function projectFile(project: Project): ProjectFile {
-  return { format: 'choco-factory-project', version: 1, project };
+  return { format: 'choco-factory-project', version: 2, project };
 }
 
 export function readFileText(file: File): Promise<string> {

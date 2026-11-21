@@ -1,5 +1,6 @@
 import type { Binding, KeyboardDefinition, Layer, Project } from './types';
-import { layersFromParsed, parseKeymap } from '../zmk/keymap';
+import { behaviorRegistry, layersFromParsed, macroBehavior, parseKeymap } from '../zmk/keymap';
+import { LAYERS_PER_OS, OS_LIST, OS_SCHEMA, defaultOsLayout, expandToOsLayers, inferOsDefaults, isOsProject } from './os';
 
 export const newId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `p-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -13,9 +14,25 @@ export function defaultLayers(kb: KeyboardDefinition, source = defaultKeymapSour
   return layersFromParsed(parseKeymap(source));
 }
 
+const OS_LAYER_COUNT = LAYERS_PER_OS * OS_LIST.length;
+
+/** キーマップのレイヤーを OS 別の 25 レイヤーにする (5 レイヤー以下なら各 OS にコピー) */
+export function osLayersFromKeymap(kb: KeyboardDefinition, source: string, layers: Layer[]): Layer[] {
+  if (layers.length === OS_LAYER_COUNT) return layers;
+  if (layers.length > LAYERS_PER_OS) {
+    throw new Error(
+      `キーマップのレイヤー数が ${layers.length} です。OS 別キーマップ (5 OS × ${LAYERS_PER_OS} レイヤー) にするには、レイヤー数が ${LAYERS_PER_OS} 以下か ${OS_LAYER_COUNT} のキーマップを読み込んでください。`,
+    );
+  }
+  const registry = behaviorRegistry(parseKeymap(source).customBehaviors);
+  return expandToOsLayers(layers, registry, defaultOsLayout(), (id, name) => emptyLayer(kb, id, name));
+}
+
 export function createProject(kb: KeyboardDefinition, name: string, source = defaultKeymapSource(kb)): Project {
   const now = Date.now();
-  return { id: newId(), name, keyboardId: kb.id, layers: defaultLayers(kb, source), keymapSource: source, macros: [], createdAt: now, updatedAt: now };
+  const layers = osLayersFromKeymap(kb, source, defaultLayers(kb, source));
+  const os = inferOsDefaults(layers, defaultOsLayout());
+  return { id: newId(), name, keyboardId: kb.id, schema: OS_SCHEMA, os, layers, keymapSource: source, macros: [], shortcuts: [], combos: parseKeymap(source).combos, createdAt: now, updatedAt: now };
 }
 
 /** インポートした .keymap からプロジェクトを作成。キー数が合わない場合はエラー */
@@ -25,9 +42,50 @@ export function projectFromKeymapFile(kb: KeyboardDefinition, name: string, text
   if (!layers.length) throw new Error('キーマップにレイヤーがありません');
   const bad = layers.find((l) => l.bindings.length !== kb.keys.length);
   if (bad) throw new Error(`「${bad.name}」のキー数 (${bad.bindings.length}) が ${kb.name} のキー数 (${kb.keys.length}) と一致しません`);
-  const p = createProject(kb, name, text);
-  p.layers = layers;
-  return p;
+  return createProject(kb, name, text);
+}
+
+/** 旧バージョン (OS 別キーマップ導入前) の既定キーマップか */
+function isLegacyBundledSource(source: string): boolean {
+  try {
+    const p = parseKeymap(source);
+    return p.layers.length === 5 && p.reservedLayers.length === 3 && source.includes('ZMK Studio から追加できる予備レイヤー');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 保存データの移行 (既存ユーザーのデータを壊さないため)。
+ *  - schema 1 (レイヤーの一覧のみ) → schema 2 (OS 別 5 × 5 レイヤー + ショートカット + コンボ)
+ *  - 旧形式の 1〜5 レイヤーは各 OS に同じ内容でコピーします。6 レイヤー目以降は legacyLayers に保存します。
+ */
+export function migrateProject(p: Project, kb: KeyboardDefinition): Project {
+  let next: Project = { ...p, macros: p.macros ?? [], shortcuts: p.shortcuts ?? [], combos: p.combos ?? [] };
+  if (!next.os || !isOsProject(next)) {
+    let source = next.keymapSource;
+    if (isLegacyBundledSource(source)) source = defaultKeymapSource(kb);
+    const base = next.layers.slice(0, LAYERS_PER_OS);
+    const rest = next.layers.slice(LAYERS_PER_OS);
+    const registry = behaviorRegistry([...parseKeymap(next.keymapSource).customBehaviors, ...next.macros.map(macroBehavior)]);
+    let layers = next.layers.length === OS_LAYER_COUNT && next.os ? next.layers : expandToOsLayers(base, registry, defaultOsLayout(), (id, name) => emptyLayer(kb, id, name));
+    // ファイル由来のエンコーダー設定 (旧データには無い) を補う
+    const fileLayers = layersFromParsed(parseKeymap(source));
+    layers = layers.map((l, i) => {
+      if (l.sensors) return l;
+      const s = (fileLayers[i] ?? fileLayers[i % LAYERS_PER_OS] ?? fileLayers[0])?.sensors;
+      return s ? { ...l, sensors: s } : l;
+    });
+    next = {
+      ...next,
+      keymapSource: source,
+      layers,
+      os: inferOsDefaults(layers, defaultOsLayout()),
+      ...(rest.length ? { legacyLayers: [...(p.legacyLayers ?? []), ...rest] } : {}),
+    };
+  }
+  next.schema = OS_SCHEMA;
+  return next;
 }
 
 export const TRANS: Binding = { b: 'trans', p: [] };
@@ -43,7 +101,8 @@ export function nextLayerId(layers: Layer[]): number {
 /** プロジェクト JSON ファイル */
 export interface ProjectFile {
   format: 'choco-factory-project';
-  version: 1;
+  /** 1 = 旧形式 / 2 = OS 別キーマップ (読み込み時に自動で移行) */
+  version: 1 | 2;
   project: Project;
 }
 

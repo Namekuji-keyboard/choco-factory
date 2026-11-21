@@ -47,10 +47,10 @@ export function paramKindsFromMetadata(d: GetBehaviorDetailsResponse): ParamKind
 export function buildBehaviorMap(details: GetBehaviorDetailsResponse[], known: BehaviorDef[]): BehaviorMap {
   const behaviors: DeviceBehavior[] = details.map((d) => {
     const n = norm(d.displayName);
-    const def =
-      known.find((k) => norm(k.displayName) === n) ??
-      known.find((k) => k.aliases?.some((a) => norm(a) === n)) ??
-      known.find((k) => norm(k.label) === n);
+    // 英数字を含まない名前 (日本語のみなど) は照合できないので対応付けない
+    const def = !n
+      ? undefined
+      : (known.find((k) => norm(k.displayName) === n) ?? known.find((k) => k.aliases?.some((a) => norm(a) === n)) ?? known.find((k) => norm(k.label) === n));
     const metaParams = paramKindsFromMetadata(d).length;
     return { id: d.id, displayName: d.displayName, label: def?.label, paramCount: def ? def.params.length : metaParams, details: d };
   });
@@ -150,7 +150,7 @@ export async function applyToDevice(
   for (const l of project) for (const b of l.bindings) bindingToDevice(b, map);
   if (project.length > deviceLayers.length && project.length - deviceLayers.length > keymap.availableLayers) {
     throw new DeviceError(
-      `レイヤー数 (${project.length}) がファームウェアの上限 (${deviceLayers.length + keymap.availableLayers}) を超えています。キーマップファイルに予備レイヤー (status = "reserved") を追加してください。`,
+      `レイヤー数 (${project.length}) がキーボードのファームウェアの上限 (${deviceLayers.length + keymap.availableLayers}) を超えています。OS 別 25 レイヤー版のファームウェアを書き込んでください (「ファイル」→「ZMK 設定一式 (ZIP)」)。`,
     );
   }
   const tooLong = project.find((l) => new TextEncoder().encode(l.name).length > keymap.maxLayerNameLength);

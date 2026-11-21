@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { Search, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, Keyboard } from 'lucide-react';
 import { useEditor } from '../state/editor';
 import { useDevice, useRegistry } from '../state/device';
 import type { Binding, MacroDef } from '../model/types';
@@ -8,6 +8,10 @@ import { KEYCODES, KEYCODE_CATEGORY_LABELS, keycodeLabel, keycodeSearchText, pre
 import { BT_COMMANDS, MOUSE_BUTTONS, MOUSE_MOVES, OUT_COMMANDS, mouseScrolls, type BehaviorDef } from '../zmk/behaviors';
 import { scrollValFor } from '../state/editor';
 import { MacroDialog } from './MacroDialog';
+import { ShortcutsDialog } from './Features';
+import { keycodeDescriptionJa } from '../zmk/keycodes.ja';
+import { OS_LIST, absLayer, osSelectBinding, splitLayerIndex } from '../model/os';
+import { SHORTCUT_PRESETS, presetKeys, resolveShortcut, shortcutText } from '../model/shortcuts';
 
 type Tab =
   | 'basic'
@@ -21,6 +25,8 @@ type Tab =
   | 'apps'
   | 'taphold'
   | 'layers'
+  | 'os'
+  | 'shortcuts'
   | 'bluetooth'
   | 'mouse'
   | 'special'
@@ -34,8 +40,10 @@ const TABS: { id: Tab; label: string; cats?: KeycodeCategory[] }[] = [
   { id: 'modifiers', label: '修飾キー', cats: ['modifiers'] },
   { id: 'navigation', label: '矢印・移動', cats: ['navigation'] },
   { id: 'media', label: 'メディア・音量', cats: ['media', 'volume'] },
+  { id: 'shortcuts', label: 'ショートカット' },
   { id: 'taphold', label: 'Mod-Tap / Layer-Tap' },
   { id: 'layers', label: 'レイヤー' },
+  { id: 'os', label: 'OS 切替' },
   { id: 'bluetooth', label: 'Bluetooth' },
   { id: 'macros', label: 'マクロ' },
   { id: 'mouse', label: 'マウス' },
@@ -60,6 +68,7 @@ export function KeyPicker() {
   const [tab, setTab] = useState<Tab>('basic');
   const [query, setQuery] = useState('');
   const [macroEdit, setMacroEdit] = useState<MacroDef | null | 'new'>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const project = useEditor((s) => s.project);
   const layerIndex = useEditor((s) => s.layerIndex);
   const selected = useEditor((s) => s.selected);
@@ -80,7 +89,7 @@ export function KeyPicker() {
     key: `k${k.value}`,
     label: keycodeLabel(k.value, host),
     sub: preferredName(k),
-    title: `${k.names.join(' / ')}\n${k.comment}`,
+    title: `${k.names.join(' / ')}\n${keycodeDescriptionJa(k)}`,
     keycode: k.value,
   });
   const behaviorItem = (b: Binding, label: string, sub: string, title: string): Item => ({
@@ -104,23 +113,48 @@ export function KeyPicker() {
     }
     const t = TABS.find((x) => x.id === tab)!;
     if (t.cats) return KEYCODES.filter((k) => t.cats!.includes(k.category)).map(keycodeItem);
-    const layers = project.layers;
+    // OS 別キーマップでは、表示中の OS のレイヤーだけを候補にする (OS 間で設定が混ざらないように)
+    const os = project.os;
+    const curOs = os ? splitLayerIndex(os, layerIndex).os : 0;
+    const layers = os ? project.layers.slice(absLayer(os, curOs, 0), absLayer(os, curOs, os.layersPerOs)) : project.layers;
+    const num = (i: number) => (os ? i : project.layers.indexOf(layers[i]));
     const sv = scrollValFor(project.keymapSource);
     switch (tab) {
       case 'layers':
         return layers.flatMap((l, i) => [
-          behaviorItem({ b: 'mo', p: [l.id] }, `MO ${i}`, l.name, `押している間「${l.name}」`),
-          behaviorItem({ b: 'tog', p: [l.id] }, `TG ${i}`, l.name, `「${l.name}」をオン/オフ`),
-          behaviorItem({ b: 'to', p: [l.id] }, `TO ${i}`, l.name, `「${l.name}」に切り替え`),
-          behaviorItem({ b: 'sl', p: [l.id] }, `SL ${i}`, l.name, `次の1キーだけ「${l.name}」`),
+          behaviorItem({ b: 'mo', p: [l.id] }, `MO ${num(i)}`, l.name, `押している間「${l.name}」`),
+          behaviorItem({ b: 'tog', p: [l.id] }, `TG ${num(i)}`, l.name, `「${l.name}」をオン/オフ`),
+          behaviorItem({ b: 'to', p: [l.id] }, `TO ${num(i)}`, l.name, `「${l.name}」に切り替え (他のレイヤーはオフ)`),
+          behaviorItem({ b: 'sl', p: [l.id] }, `SL ${num(i)}`, l.name, `次の1キーだけ「${l.name}」`),
         ]);
+      case 'os':
+        if (!os) return [];
+        return OS_LIST.flatMap((o, i) => [
+          behaviorItem(osSelectBinding(os, i, true), o.name, `BT${o.profile} + L${os.systems[i].defaultLayer}`, `${o.name} に切り替え: Bluetooth プロファイル ${o.profile} を選択し、${o.name} のデフォルトレイヤー (Layer ${os.systems[i].defaultLayer}) へ移動`),
+          behaviorItem(osSelectBinding(os, i, false), `${o.short} (層のみ)`, `L${os.systems[i].defaultLayer}`, `${o.name} のデフォルトレイヤー (Layer ${os.systems[i].defaultLayer}) へ移動 (Bluetooth プロファイルは変えない)`),
+        ]);
+      case 'shortcuts': {
+        const osId = os ? OS_LIST[curOs].id : 'windows';
+        const own = (project.shortcuts ?? []).filter((x) => x.os === 'all' || x.os === osId);
+        const ownItems = own.flatMap((x) => {
+          const r = resolveShortcut(x);
+          if (!r.binding) return [];
+          return [behaviorItem(r.binding, x.name, shortcutText(x.keys, host), `${x.name}: ${shortcutText(x.keys, host)}${r.kind === 'macro' ? '\n(複数キーのマクロ。ファームウェアのビルドが必要)' : ''}${x.note ? `\n${x.note}` : ''}`)];
+        });
+        const presetItems = SHORTCUT_PRESETS[osId].flatMap((pr) => {
+          const r = resolveShortcut({ id: pr.name, keys: presetKeys(pr) });
+          if (r.kind !== 'kp' || !r.binding) return [];
+          return [{ ...behaviorItem(r.binding, pr.name, shortcutText(presetKeys(pr), host), `${pr.name}: ${shortcutText(presetKeys(pr), host)}${pr.note ? `\n※ ${pr.note}` : ''}`), key: `preset-${pr.name}` }];
+        });
+        return [...ownItems, ...presetItems];
+      }
       case 'taphold': {
         const A = KEYCODES.find((k) => k.names.includes('A'))!.value;
         const SPACE = KEYCODES.find((k) => k.names.includes('SPACE'))!.value;
         const mods = KEYCODES.filter((k) => k.category === 'modifiers');
         return [
           ...mods.map((m) => behaviorItem({ b: 'mt', p: [m.value, A] }, `MT ${keycodeLabel(m.value, host)}`, 'Mod-Tap', `ホールドで ${keycodeLabel(m.value, host)}、タップでキー (右のパネルで変更)`)),
-          ...layers.slice(1).map((l, i) => behaviorItem({ b: 'lt', p: [l.id, SPACE] }, `LT ${i + 1}`, l.name, `ホールドで「${l.name}」、タップでキー (右のパネルで変更)`)),
+          ...layers.slice(1).map((l, i) => behaviorItem({ b: 'lt', p: [l.id, SPACE] }, `LT ${num(i + 1)}`, l.name, `ホールドで「${l.name}」、タップでキー (右のパネルで変更)`)),
           ...MODIFIER_STICKY(host).map(([v, label]) => behaviorItem({ b: 'sk', p: [v] }, `SK ${label}`, 'スティッキー', `次の1キーだけ ${label} を押した状態にする`)),
         ];
       }
@@ -142,7 +176,7 @@ export function KeyPicker() {
           .map((d) => behaviorItem({ b: d.label, p: [] }, d.nameJa, `&${d.label}`, d.description));
       case 'macros':
         return [...registry.values()]
-          .filter((d) => d.custom)
+          .filter((d) => d.custom && !/^sc_/.test(d.label))
           .map((d) => behaviorItem({ b: d.label, p: d.params.map(() => 0) }, d.nameJa, `&${d.label}`, `${d.description}${d.params.length ? '\nパラメータは右のパネルで設定' : ''}`));
     }
     return [];
@@ -235,6 +269,21 @@ export function KeyPicker() {
             ))}
           </div>
         )}
+        {tab === 'shortcuts' && !query && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 p-2 text-xs text-muted">
+            <span className="flex-1">
+              表示中の OS のショートカット (登録したもの → よく使うプリセットの順)。修飾キー + 1 キーはそのままキーボードに書き込めます。通常キーを 2 個以上同時に押すものはマクロになり、ファームウェアのビルドが必要です。OS やアプリによって動作が異なる場合があります。
+            </span>
+            <button className="btn-outline py-1 text-xs" onClick={() => setShortcutsOpen(true)}>
+              <Keyboard size={13} /> ショートカットを管理
+            </button>
+          </div>
+        )}
+        {tab === 'os' && !query && (
+          <p className="mb-3 text-xs text-muted">
+            OS 切替キー: Bluetooth プロファイルの切り替えと、その OS のデフォルトレイヤーへの移動を 1 回の押下で行います (&amp;os_sel)。「層のみ」は Bluetooth プロファイルを変えずにレイヤーだけ切り替えます (&amp;os_to)。Bluetooth だけを切り替えるキーは「Bluetooth」タブにあります。
+          </p>
+        )}
         {tab === 'taphold' && !query && (
           <p className="mb-3 text-xs text-muted">ボタンで Mod-Tap / Layer-Tap を割り当てたあと、右のパネルでタップ時のキーやレイヤーを変更できます。</p>
         )}
@@ -261,6 +310,7 @@ export function KeyPicker() {
         <p className="mt-3 text-[11px] text-muted">{KEYCODE_CATEGORY_LABELS.letters} などの表示は「設定」の「PC のキーボード配列」(JIS / US) に合わせて表示しています。</p>
       </div>
       {macroEdit && <MacroDialog macro={macroEdit === 'new' ? null : macroEdit} onClose={() => setMacroEdit(null)} />}
+      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
     </div>
   );
 }

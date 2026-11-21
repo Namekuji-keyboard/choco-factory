@@ -8,6 +8,8 @@ import { findKeyboardByDeviceName } from '../keyboards';
 import { BUILTIN_BEHAVIORS, type BehaviorDef } from '../zmk/behaviors';
 import { customBehaviorsFor, registryFor, useEditor } from './editor';
 import { macroBehavior } from '../zmk/keymap';
+import { shortcutBehaviors } from '../model/shortcuts';
+import { inferOsDefaults } from '../model/os';
 
 /**
  * 接続状態
@@ -44,6 +46,8 @@ interface DeviceState {
   progress: ApplyProgress | null;
   /** 接続直後: デバイスとプロジェクトの内容が異なる */
   pendingLoad: Layer[] | null;
+  /** キーボードのレイヤー数がプロジェクト (OS 別 25 レイヤー) と合わない場合の説明 */
+  layerMismatch: string | null;
 
   connect(kind: TransportKind | 'sim'): Promise<void>;
   disconnect(): Promise<void>;
@@ -133,6 +137,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     error: null,
     progress: null,
     pendingLoad: null,
+    layerMismatch: null,
 
     registry() {
       const ed = useEditor.getState();
@@ -181,7 +186,7 @@ export const useDevice = create<DeviceState>((set, get) => {
 
     async disconnect() {
       const dev = get().dev;
-      set({ dev: null, status: 'disconnected', info: null, map: null, deviceLayers: null, pendingLoad: null, progress: null, sim: null });
+      set({ dev: null, status: 'disconnected', info: null, map: null, deviceLayers: null, pendingLoad: null, progress: null, sim: null, layerMismatch: null });
       await dev?.disconnect();
     },
 
@@ -191,13 +196,24 @@ export const useDevice = create<DeviceState>((set, get) => {
       set({ status: 'loading', error: null });
       try {
         const ed = useEditor.getState();
-        const known = [...BUILTIN_BEHAVIORS, ...(ed.project ? customBehaviorsFor(ed.project.keymapSource) : []), ...(ed.project?.macros.map(macroBehavior) ?? [])];
+        const known = [
+          ...BUILTIN_BEHAVIORS,
+          ...(ed.project ? customBehaviorsFor(ed.project.keymapSource) : []),
+          ...(ed.project?.macros.map(macroBehavior) ?? []),
+          ...shortcutBehaviors(ed.project?.shortcuts),
+        ];
         const map = buildBehaviorMap(await dev.listBehaviors(), known);
         set({ map });
         const keymap = await dev.getKeymap();
         const layers = layersFromDevice(keymap, map, get().registry());
-        set({ deviceLayers: layers, availableLayers: keymap.availableLayers, status: 'connected' });
+        set({ deviceLayers: layers, availableLayers: keymap.availableLayers, status: 'connected', layerMismatch: null });
         const project = useEditor.getState().project;
+        if (project?.os && layers.length !== project.layers.length) {
+          const msg = `キーボードのレイヤー数は ${layers.length} です。OS 別キーマップ (${project.layers.length} レイヤー) を書き込むには、OS 別 25 レイヤー版のファームウェアを書き込んでください (「ファイル」→「ZMK 設定一式 (ZIP)」でビルドできます)。`;
+          set({ layerMismatch: msg });
+          useEditor.getState().toast('error', msg);
+          return;
+        }
         if (project && planSize(planApply(project.layers, layers)) > 0) set({ pendingLoad: layers });
         else useEditor.getState().toast('success', 'キーボードに接続しました。キーマップはこのプロジェクトと同じです。');
       } catch (e) {
@@ -213,7 +229,10 @@ export const useDevice = create<DeviceState>((set, get) => {
       const layers = get().pendingLoad;
       if (!layers) return;
       const ed = useEditor.getState();
-      ed.setLayers(layers, 'キーボードからキーマップを読み込み');
+      const cur = ed.project;
+      // エンコーダーの設定は ZMK Studio では取得できないので、プロジェクトの設定を残す
+      const merged = layers.map((l, i) => (cur?.layers[i]?.sensors ? { ...l, sensors: cur.layers[i].sensors } : l));
+      ed.setLayers(merged, 'キーボードからキーマップを読み込み', cur?.os ? inferOsDefaults(merged, cur.os) : undefined);
       const info = get().info;
       if (info) ed.replaceDevice({ name: info.name, serial: info.serial, syncedAt: Date.now() });
       set({ pendingLoad: null });
@@ -229,12 +248,16 @@ export const useDevice = create<DeviceState>((set, get) => {
         ed.toast('error', 'キーボードが接続されていません');
         return false;
       }
+      if (get().layerMismatch) {
+        ed.toast('error', get().layerMismatch!);
+        return false;
+      }
       set({ status: 'writing', error: null, progress: { done: 0, total: 1, message: '準備中…' } });
       try {
         const res = await applyToDevice(dev, ed.project.layers, map, get().registry(), (p) => set({ progress: p }));
         // デバイスが割り当てたレイヤー ID をプロジェクトにも反映 (内容は同じ)
         const idsChanged = res.layers.some((l, i) => l.id !== ed.project!.layers[i].id);
-        if (idsChanged) ed.setLayers(res.layers, 'キーボードのレイヤー ID に合わせる');
+        if (idsChanged) ed.setLayers(res.layers.map((l, i) => ({ ...l, sensors: ed.project!.layers[i]?.sensors })), 'キーボードのレイヤー ID に合わせる');
         const info = get().info;
         if (info) ed.replaceDevice({ name: info.name, serial: info.serial, syncedAt: Date.now() });
         set({ status: 'saved', deviceLayers: res.layers, progress: null });
@@ -290,6 +313,7 @@ export function useRegistry(): Map<string, BehaviorDef> {
   const map = useDevice((s) => s.map);
   const source = project?.keymapSource;
   const macros = project?.macros;
+  const shortcuts = project?.shortcuts;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => registryFor(project, deviceOnlyBehaviors(map)), [source, macros, map]);
+  return useMemo(() => registryFor(project, deviceOnlyBehaviors(map)), [source, macros, shortcuts, map]);
 }

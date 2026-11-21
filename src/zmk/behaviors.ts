@@ -52,7 +52,33 @@ export interface BehaviorDef {
   /** devicetree のノード名・label プロパティ (Studio の表示名との照合用) */
   aliases?: string[];
   compatible?: string;
+  /**
+   * このアプリが用意するビヘイビア (OS 切替など) の devicetree 定義。
+   * キーマップファイルに定義が無い場合、ファイル出力時に macros { } へ追加します。
+   */
+  definition?: string;
 }
+
+/** OS 切替 (Bluetooth プロファイル選択 + OS のデフォルトレイヤーへ移動) */
+export const OS_SELECT_DEFINITION = `os_sel: os_sel {
+    compatible = "zmk,behavior-macro-two-param";
+    #binding-cells = <2>;
+    display-name = "OS Select";
+    wait-ms = <0>;
+    tap-ms = <10>;
+    // 1 番目のパラメータ = Bluetooth プロファイル、2 番目 = 移動先のレイヤー (&bt の 3 = BT_SEL)
+    bindings = <&macro_param_1to2 &bt 3 MACRO_PLACEHOLDER &macro_param_2to1 &to MACRO_PLACEHOLDER>;
+};`;
+
+/** OS 切替 (レイヤーのみ。Bluetooth プロファイルは変えない) */
+export const OS_LAYER_DEFINITION = `os_to: os_to {
+    compatible = "zmk,behavior-macro-one-param";
+    #binding-cells = <1>;
+    display-name = "OS Layer";
+    wait-ms = <0>;
+    tap-ms = <10>;
+    bindings = <&macro_param_1to1 &to MACRO_PLACEHOLDER>;
+};`;
 
 export const BUILTIN_BEHAVIORS: BehaviorDef[] = [
   { label: 'kp', displayName: 'Key Press', nameJa: 'キー', description: '通常のキー入力', params: ['keycode'], paramNames: ['キー'], group: 'key' },
@@ -80,6 +106,8 @@ export const BUILTIN_BEHAVIORS: BehaviorDef[] = [
   { label: 'bootloader', displayName: 'Bootloader', nameJa: 'ブートローダー', description: 'ファームウェア書き込みモードに入る', params: [], group: 'special' },
   { label: 'sys_reset', displayName: 'Reset', nameJa: 'リセット', description: 'キーボードを再起動', params: [], group: 'special' },
   { label: 'soft_off', displayName: 'z_so_off', nameJa: 'ソフトオフ', description: 'キーボードの電源を切る (スリープより深い省電力状態)', params: [], group: 'special' },
+  { label: 'os_sel', displayName: 'OS Select', nameJa: 'OS 切替 (BT 連動)', description: 'Bluetooth プロファイルを切り替え、その OS のデフォルトレイヤーへ移動します (このアプリが追加するマクロ &os_sel)', params: ['bt_arg', 'layer'], paramNames: ['Bluetooth プロファイル', '移動先のレイヤー'], group: 'layer', compatible: 'zmk,behavior-macro-two-param', definition: OS_SELECT_DEFINITION },
+  { label: 'os_to', displayName: 'OS Layer', nameJa: 'OS 切替 (レイヤーのみ)', description: 'Bluetooth プロファイルは変えずに、その OS のデフォルトレイヤーへ移動します (このアプリが追加するマクロ &os_to)', params: ['layer'], paramNames: ['移動先のレイヤー'], group: 'layer', compatible: 'zmk,behavior-macro-one-param', definition: OS_LAYER_DEFINITION },
   { label: 'studio_unlock', displayName: 'Studio Unlock', nameJa: 'Studio アンロック', description: 'Web アプリからの編集を許可する (ZMK Studio のロック解除)', params: [], group: 'special' },
 ];
 

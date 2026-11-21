@@ -54,11 +54,24 @@ describe('Choco-Key.keymap の解析', () => {
     const r = exportKeymap(original, layers, chocoKey);
     expect(r.text).toBe(original);
   });
-  it('Studio 版キーマップも解析でき、予備レイヤーは除外される', () => {
+  it('Studio 版 (OS 別 25 レイヤー) キーマップ', () => {
     const p = parseKeymap(studio);
-    expect(p.layers).toHaveLength(5);
-    expect(p.reservedLayers).toHaveLength(3);
-    expect(layersFromParsed(p)[4].bindings[5]).toEqual({ b: 'studio_unlock', p: [] });
+    expect(p.layers).toHaveLength(25);
+    expect(p.reservedLayers).toHaveLength(0);
+    const ls = layersFromParsed(p);
+    expect(ls[4].bindings[5]).toEqual({ b: 'studio_unlock', p: [] });
+    // 各 OS の Layer 4 に OS 切替キー
+    expect(ls[4].bindings[15]).toEqual({ b: 'os_sel', p: [0, 0] });
+    expect(ls[9].bindings[16]).toEqual({ b: 'os_sel', p: [1, 5] });
+    expect(ls[24].bindings[19]).toEqual({ b: 'os_sel', p: [4, 20] });
+    // macOS Layer 0 のレイヤー参照は macOS 内 (5〜9) を指す
+    expect(ls[5].bindings[34]).toEqual({ b: 'lt', p: [6, (0x04 << 24 | 0x070035) >>> 0] });
+    expect(ls[5].bindings[41]).toEqual({ b: 'lt', p: [9, 0x070029] });
+    // エンコーダー
+    expect(ls[0].sensors).toHaveLength(2);
+    expect(ls[0].sensors![0].cw).toEqual({ b: 'msc', p: [100] });
+    // 無変更なら完全一致
+    expect(exportKeymap(studio, ls, chocoKey, [], { osMacros: true }).text).toBe(studio);
   });
 });
 

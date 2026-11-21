@@ -9,6 +9,9 @@ import { isProjectFile } from '../model/project';
 import { createBackup, restoreBackup } from '../storage/db';
 import { newId } from '../model/project';
 import { planApply } from '../device/sync';
+import type { Project } from '../model/types';
+import { bindingsEqual, combosEqual, layersFromParsed, parseKeymap, sensorsEqual } from '../zmk/keymap';
+import { shortcutBehaviors } from '../model/shortcuts';
 
 // ---------------------------------------------------------------------------
 // プロジェクト管理
@@ -299,7 +302,7 @@ export function HelpDialog({ open, onClose, onFiles }: { open: boolean; onClose:
           <li>XIAO nRF52840 のリセットボタンを素早く 2 回押すと USB ドライブとして認識されるので、右手・左手それぞれの .uf2 をコピーします。</li>
         </ol>
         <p className="mt-2 rounded-lg bg-surface-2 p-2 text-xs text-muted">
-          変更点: 右手 (セントラル) のビルドに <code>studio-rpc-usb-uart</code> と <code>CONFIG_ZMK_STUDIO=y</code> を追加、物理レイアウトの定義、Layer 4 に <code>&amp;studio_unlock</code>、予備レイヤー 3 つを追加。左右間の BLE 通信や他の設定は変更していません。2 回目以降は .uf2 の書き込みは不要です。
+          変更点: 右手 (セントラル) のビルドに <code>studio-rpc-usb-uart</code> と <code>CONFIG_ZMK_STUDIO=y</code> を追加、物理レイアウトの定義、OS 別 25 レイヤー (Windows / macOS / Linux / iOS / Android × Layer 0〜4)、各 OS の Layer 4 に <code>&amp;studio_unlock</code> と OS 切替キー。左右間の BLE 通信や他の設定は変更していません。キーの割り当てだけなら、2 回目以降は .uf2 の書き込みは不要です (エンコーダー・コンボ・複数キーのショートカットを変えたときはビルドと書き込みが必要)。
         </p>
       </Section>
       <Section title="2. キーボードに接続する">
@@ -321,9 +324,10 @@ export function HelpDialog({ open, onClose, onFiles }: { open: boolean; onClose:
       </Section>
       <Section title="できること / できないこと (ZMK Studio の仕様)">
         <ul className="list-disc space-y-1 pl-5 text-sm">
-          <li>✅ キーの割り当て・レイヤー名・レイヤーの追加 (予備レイヤーの範囲内) は Web から直接書き込めます。</li>
-          <li>⚠️ マクロ・コンボ・エンコーダーの割り当て・タップ時間などの設定は ZMK Studio が未対応のため、ZIP を出力してファームウェアをビルドする必要があります。</li>
-          <li>⚠️ Bluetooth 経由の編集は ZMK 公式でも Linux の Chrome のみ動作確認されています (Windows / macOS では接続できない場合があります)。</li>
+          <li>✅ 25 レイヤーすべてのキーの割り当て・レイヤー名・OS 切替キー・修飾キー + 1 キーのショートカットは Web から直接書き込めます。</li>
+          <li>⚠️ マクロ・複数キーのショートカット・コンボ・エンコーダーの割り当て・タップ時間などの設定は ZMK Studio が未対応のため、ZIP を出力してファームウェアをビルドする必要があります。</li>
+          <li>ℹ️ OS 別のデフォルトレイヤーは、OS 切替キー (Layer 4 の右手 2 段目) で切り替わります。ZMK は接続先の OS を判別できないため、自動切り替えはしません。電源を入れた直後は Windows Layer 0 になります。</li>
+          <li>ℹ️ Web アプリとキーボードの Bluetooth 接続は、Windows / macOS のブラウザでは ZMK 公式に未対応のため提供していません (USB で接続してください)。キーボード本来の Bluetooth 接続には影響しません。</li>
           <li>ℹ️ Web から保存したキーマップは .keymap ファイルより優先されます。ファイル側を反映したいときは「設定」→「キーボードを初期化」。</li>
         </ul>
       </Section>
@@ -343,6 +347,8 @@ export function ApplyDialog({ open, onClose, onConfirm }: { open: boolean; onClo
   const plan = planApply(project.layers, deviceLayers);
   const byLayer = new Map<number, number>();
   plan.bindings.forEach((b) => byLayer.set(b.layerIndex, (byLayer.get(b.layerIndex) ?? 0) + 1));
+  const stored = estimateStoredBindings(project);
+  const fileOnly = fileOnlyChanges(project);
   return (
     <Modal
       open={open}
@@ -376,7 +382,16 @@ export function ApplyDialog({ open, onClose, onConfirm }: { open: boolean; onClo
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-xs text-muted">書き込み中は USB ケーブルを抜かないでください。書き込み後に内容を読み直して確認します。</p>
+      {fileOnly.length > 0 && (
+        <p className="mt-3 rounded-lg bg-warn/10 p-2 text-xs text-warn">
+          {fileOnly.join('・')} は ZMK Studio では書き込めないため、今回の適用には含まれません。「ファイル」→「ZMK 設定一式 (ZIP)」でファームウェアをビルドしてください。
+        </p>
+      )}
+      <p className={clsx('mt-3 text-xs', stored > STORAGE_WARN ? 'rounded-lg bg-warn/10 p-2 text-warn' : 'text-muted')}>
+        フラッシュの保存量の目安: ファームウェアの初期状態から変更したキー {stored} 個 / 約 {STORAGE_LIMIT} 個 (XIAO nRF52840 の設定領域 32KB)。
+        {stored > STORAGE_WARN && ' 変更が多いため保存に失敗する可能性があります。ZIP を出力してファームウェアをビルドし直し、「キーボードを初期化」すると保存量を減らせます。'}
+      </p>
+      <p className="mt-2 text-xs text-muted">書き込み中は USB ケーブルを抜かないでください。書き込み後に内容を読み直して確認します。</p>
     </Modal>
   );
 }
@@ -499,4 +514,37 @@ export function Toasts() {
       ))}
     </div>
   );
+}
+
+/**
+ * ZMK はファームウェアの初期状態から変更したキーを 1 キーずつ settings (NVS、XIAO nRF52840 では 32KB) に保存する。
+ * 1 キーあたり約 44 バイト (名前 + 値 + NVS の管理領域) なので、Bluetooth のペアリング情報などを除くと約 600 キーが目安。
+ */
+const STORAGE_LIMIT = 600;
+const STORAGE_WARN = 450;
+
+function estimateStoredBindings(project: Project): number {
+  try {
+    const base = layersFromParsed(parseKeymap(project.keymapSource));
+    let n = 0;
+    project.layers.forEach((l, i) => l.bindings.forEach((b, pos) => base[i]?.bindings[pos] && !bindingsEqual(b, base[i].bindings[pos]) && n++));
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
+/** ZMK Studio では書き込めない (ファームウェアのビルドが必要な) 変更 */
+function fileOnlyChanges(project: Project): string[] {
+  const out: string[] = [];
+  try {
+    const parsed = parseKeymap(project.keymapSource);
+    if (project.layers.some((l, i) => l.sensors && !sensorsEqual(l.sensors, parsed.layers[i]?.sensors))) out.push('エンコーダーの割り当て');
+    if (project.combos && !combosEqual(project.combos, parsed.combos)) out.push('コンボ');
+    if (shortcutBehaviors(project.shortcuts).some((d) => !parsed.labels.has(d.label))) out.push('複数キーのショートカット');
+    if (project.macros.length) out.push('マクロ');
+  } catch {
+    /* noop */
+  }
+  return out;
 }

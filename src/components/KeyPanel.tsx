@@ -22,6 +22,8 @@ import {
 import { MOD_FUNCS, MODIFIER_KEYCODES, applyMods, keycodeByName, keycodeLabel, modsOf, stripMods } from '../zmk/keycodes';
 import { formatBinding } from '../zmk/keymap';
 import { Kbd } from './ui';
+import { OS_LIST, absLayer, osDefaultIndex, splitLayerIndex } from '../model/os';
+import type { OsLayout } from '../model/types';
 
 /** ビヘイビアを切り替えたときの初期パラメータ */
 function defaultParams(def: BehaviorDef, prev: Binding, layerIds: number[]): number[] {
@@ -35,6 +37,8 @@ function defaultParams(def: BehaviorDef, prev: Binding, layerIds: number[]): num
         return keycodeByName('LSHFT')!.value;
       case 'layer':
         return layerIds[1] ?? layerIds[0] ?? 0;
+      case 'bt_arg':
+        return 0;
       case 'bt_cmd':
         return 3;
       case 'mouse_button':
@@ -107,7 +111,10 @@ export function KeyPanel() {
   const def = registry.get(binding.b);
   const k = kb.keys[primaryPos];
   const multi = selected.length > 1;
-  const layerIds = project.layers.map((l) => l.id);
+  const os = project.os;
+  const curOs = os ? splitLayerIndex(os, layerIndex).os : 0;
+  // OS 別キーマップでは、新しく割り当てるレイヤー操作は表示中の OS 内のレイヤーを指す
+  const layerIds = os ? Array.from({ length: os.layersPerOs }, (_, j) => project.layers[absLayer(os, curOs, j)].id) : project.layers.map((l) => l.id);
   const notOnDevice = map && !map.byLabel.has(binding.b) && !binding.b.startsWith('__device_');
 
   const update = (next: Binding, label: string) => assign(next, label);
@@ -119,7 +126,8 @@ export function KeyPanel() {
   const changeBehavior = (label: string) => {
     const nd = registry.get(label);
     if (!nd || label === binding.b) return;
-    update({ b: label, p: defaultParams(nd, binding, layerIds) }, `${nd.nameJa} に変更`);
+    const params = label === 'os_sel' && os ? [OS_LIST[curOs].profile, osDefaultIndex(os, curOs)] : label === 'os_to' && os ? [osDefaultIndex(os, curOs)] : defaultParams(nd, binding, layerIds);
+    update({ b: label, p: params }, `${nd.nameJa} に変更`);
   };
 
   const code = formatBinding(binding, { behaviors: registry, layerIndexById: new Map(project.layers.map((l, i) => [l.id, i])), scrollVal: scrollValFor(project.keymapSource) });
@@ -131,7 +139,7 @@ export function KeyPanel() {
           <div>
             <div className="text-sm font-semibold">{multi ? `${selected.length} 個のキーを選択中` : `キー #${primaryPos + 1}`}</div>
             <div className="text-xs text-muted">
-              {layer.name} ・ {k.side === 'L' ? '左手' : '右手'}
+              {os ? `${OS_LIST[curOs].name} / Layer ${splitLayerIndex(os, layerIndex).layer}` : layer.name} ・ {k.side === 'L' ? '左手' : '右手'}
               {k.row !== undefined ? ` ${k.row + 1} 行目` : ''}
               {multi ? ' (最後に選んだキーを表示)' : ''}
             </div>
@@ -178,7 +186,11 @@ export function KeyPanel() {
           {def && <p className="mt-1 text-xs text-muted">{def.description}</p>}
         </div>
 
-        {def && binding.raw === undefined && def.params.length === binding.p.length &&
+        {os && (binding.b === 'os_sel' || binding.b === 'os_to') && binding.raw === undefined && (
+          <OsSwitchEditor os={os} binding={binding} onChange={(b) => update(b, 'OS 切替キーを変更')} />
+        )}
+
+        {def && binding.raw === undefined && def.params.length === binding.p.length && !(os && (binding.b === 'os_sel' || binding.b === 'os_to')) &&
           def.params.map((kind, i) => {
             // 2 番目のパラメータが不要なコマンド
             if ((kind === 'bt_arg' && !BT_COMMANDS.find((c) => c.value === binding.p[0])?.needsArg) || (kind === 'bl_arg' && !BL_COMMANDS.find((c) => c.value === binding.p[0])?.needsArg) || (kind === 'rgb_arg' && binding.p[0] !== 14)) return null;
@@ -191,7 +203,11 @@ export function KeyPanel() {
                 value={binding.p[i]}
                 onChange={(v) => setParam(i, v)}
                 host={host}
-                layers={project.layers.map((l, idx) => ({ id: l.id, label: `${idx}: ${l.name}` }))}
+                layers={project.layers.map((l, idx) => {
+                  if (!os) return { id: l.id, label: `${idx}: ${l.name}` };
+                  const s = splitLayerIndex(os, idx);
+                  return { id: l.id, label: `Layer ${s.layer}${l.name !== `${OS_LIST[s.os].short} ${s.layer}` ? ` (${l.name})` : ''}`, group: OS_LIST[s.os].name, own: s.os === curOs };
+                })}
                 scrollVal={scrollValFor(project.keymapSource)}
               />
             );
@@ -232,7 +248,7 @@ function ParamEditor({
   value: number;
   onChange: (v: number) => void;
   host: 'us' | 'jis';
-  layers: { id: number; label: string }[];
+  layers: { id: number; label: string; group?: string; own?: boolean }[];
   scrollVal: number;
 }) {
   const pickerTarget = useEditor((s) => s.pickerTarget);
@@ -277,17 +293,44 @@ function ParamEditor({
     );
   }
   if (kind === 'layer') {
+    const grouped = layers.some((l) => l.group);
+    const own = layers.filter((l) => l.own);
+    const others = layers.filter((l) => !l.own);
+    const cur = layers.find((l) => l.id === value);
     return (
       <div>
         <label className="label">{name}</label>
         <select className="input" value={value} onChange={(e) => onChange(Number(e.target.value))}>
-          {layers.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.label}
-            </option>
-          ))}
-          {!layers.some((l) => l.id === value) && <option value={value}>存在しないレイヤー ({value})</option>}
+          {!grouped &&
+            layers.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.label}
+              </option>
+            ))}
+          {grouped && (
+            <optgroup label={`${own[0]?.group ?? ''} (表示中の OS)`}>
+              {own.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {grouped &&
+            [...new Set(others.map((l) => l.group))].map((g) => (
+              <optgroup key={g} label={`${g} (別の OS)`}>
+                {others
+                  .filter((l) => l.group === g)
+                  .map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {g} {l.label}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          {!cur && <option value={value}>存在しないレイヤー ({value})</option>}
         </select>
+        {grouped && cur && !cur.own && <p className="mt-1 text-xs text-warn">別の OS のレイヤーを指しています。OS ごとの設定を分けたい場合は、表示中の OS のレイヤーを選んでください。</p>}
       </div>
     );
   }
@@ -366,6 +409,52 @@ function ParamEditor({
         }}
       />
       <p className="mt-1 text-xs text-muted">数値 (10進 / 0x で 16進)</p>
+    </div>
+  );
+}
+
+/** OS 切替キー (&os_sel / &os_to) の設定 */
+function OsSwitchEditor({ os, binding, onChange }: { os: OsLayout; binding: Binding; onChange: (b: Binding) => void }) {
+  const linked = binding.b === 'os_sel';
+  const target = linked ? binding.p[1] : binding.p[0];
+  const t = splitLayerIndex(os, target ?? 0);
+  const profile = linked ? binding.p[0] : OS_LIST[t.os]?.profile;
+  const standard = linked ? OS_LIST[t.os]?.profile === profile && target === osDefaultIndex(os, t.os) : target === osDefaultIndex(os, t.os);
+  const set = (osIndex: number, layer: number, link: boolean, prof = OS_LIST[osIndex].profile) =>
+    onChange(link ? { b: 'os_sel', p: [prof, absLayer(os, osIndex, layer)] } : { b: 'os_to', p: [absLayer(os, osIndex, layer)] });
+  return (
+    <div className="space-y-3 rounded-lg border border-line p-3">
+      <div>
+        <label className="label">切り替え先の OS</label>
+        <div className="grid grid-cols-3 gap-1">
+          {OS_LIST.map((o, i) => (
+            <button key={o.id} className="chip justify-center" data-on={t.os === i} onClick={() => set(i, os.systems[i].defaultLayer, linked)}>
+              {o.name}
+            </button>
+          ))}
+        </div>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={linked} onChange={(e) => set(t.os, t.layer, e.target.checked)} />
+        Bluetooth プロファイルも切り替える (BT {OS_LIST[t.os]?.profile})
+      </label>
+      <div>
+        <label className="label">移動先のレイヤー</label>
+        <select className="input" value={t.layer} onChange={(e) => set(t.os, Number(e.target.value), linked, profile)}>
+          {Array.from({ length: os.layersPerOs }, (_, j) => (
+            <option key={j} value={j}>
+              Layer {j}
+              {j === os.systems[t.os].defaultLayer ? ' (デフォルト)' : ''}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-muted">
+          {standard
+            ? 'OS のデフォルトレイヤーを変更すると、このキーの移動先も自動で更新されます。'
+            : 'デフォルトレイヤー以外を指定しています (デフォルトレイヤーを変更しても、このキーは更新されません)。'}
+          切り替えると、それまでの OS のレイヤーはすべてオフになります (&amp;to と同じ動作)。
+        </p>
+      </div>
     </div>
   );
 }
