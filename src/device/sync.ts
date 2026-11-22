@@ -9,6 +9,7 @@ import type { BehaviorDef, ParamKind } from '../zmk/behaviors';
 import { bindingsEqual } from '../zmk/keymap';
 import type { GetBehaviorDetailsResponse, Keymap, StudioDevice } from './studio';
 import { DeviceError } from './studio';
+import { ZMK_STUDIO_UNSUPPORTED, fromDeviceBinding, toDeviceBinding, type DeviceWrapper } from './wrappers';
 
 export interface DeviceBehavior {
   id: number;
@@ -24,6 +25,8 @@ export interface BehaviorMap {
   behaviors: DeviceBehavior[];
   byId: Map<number, DeviceBehavior>;
   byLabel: Map<string, DeviceBehavior>;
+  /** ZMK Studio で書き込めないビヘイビアの代わりに使うマクロ (キーボードに搭載されているもの) */
+  wrappers: DeviceWrapper[];
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -44,7 +47,7 @@ export function paramKindsFromMetadata(d: GetBehaviorDetailsResponse): ParamKind
   return k2 ? [k1, k2] : [k1];
 }
 
-export function buildBehaviorMap(details: GetBehaviorDetailsResponse[], known: BehaviorDef[]): BehaviorMap {
+export function buildBehaviorMap(details: GetBehaviorDetailsResponse[], known: BehaviorDef[], wrappers: DeviceWrapper[] = []): BehaviorMap {
   const behaviors: DeviceBehavior[] = details.map((d) => {
     const n = norm(d.displayName);
     // 英数字を含まない名前 (日本語のみなど) は照合できないので対応付けない
@@ -57,7 +60,7 @@ export function buildBehaviorMap(details: GetBehaviorDetailsResponse[], known: B
   const byId = new Map(behaviors.map((b) => [b.id, b]));
   const byLabel = new Map<string, DeviceBehavior>();
   for (const b of behaviors) if (b.label && !byLabel.has(b.label)) byLabel.set(b.label, b);
-  return { behaviors, byId, byLabel };
+  return { behaviors, byId, byLabel, wrappers: wrappers.filter((w) => byLabel.has(w.label)) };
 }
 
 /** ラベルが分からないデバイス上のビヘイビア用の仮ラベル */
@@ -73,10 +76,18 @@ export function deviceBindingToBinding(
   const label = b.label ?? unknownLabel(b);
   const count = b.label ? (registry.get(b.label)?.params.length ?? b.paramCount) : b.paramCount;
   const p = [db.param1 >>> 0, db.param2 >>> 0].slice(0, count);
-  return { b: label, p };
+  return fromDeviceBinding({ b: label, p }, map.wrappers ?? []);
 }
 
-export function bindingToDevice(binding: Binding, map: BehaviorMap): { behaviorId: number; param1: number; param2: number } {
+export function bindingToDevice(binding0: Binding, map: BehaviorMap): { behaviorId: number; param1: number; param2: number } {
+  const binding = toDeviceBinding(binding0, map.wrappers ?? []);
+  if (ZMK_STUDIO_UNSUPPORTED.has(binding.b) && binding.p.some((v) => v !== 0)) {
+    throw new DeviceError(
+      map.wrappers?.length
+        ? `&${binding.b} ${binding.p.join(' ')} は ZMK Studio から書き込めない値です (ZMK v0.2.1 の制限)。用意されているスクロール / マウス移動 / クリックの値を選んでください。`
+        : `&${binding.b} (マウス操作) は ZMK v0.2.1 の ZMK Studio から書き込めません。最新のファームウェア (Choco Factory の ZIP 出力) を書き込むと書き込めるようになります。`,
+    );
+  }
   if (binding.raw !== undefined) {
     throw new DeviceError(`&${binding.b} ${binding.raw} はパラメータを数値に変換できないため、キーボードに書き込めません`);
   }
@@ -146,13 +157,13 @@ export async function applyToDevice(
   let keymap = await dev.getKeymap();
   let deviceLayers = layersFromDevice(keymap, map, registry);
 
-  // 先に、書き込めないキーが無いか確認 (途中で失敗して中途半端な状態にならないように)
-  for (const l of project) for (const b of l.bindings) bindingToDevice(b, map);
   if (project.length > deviceLayers.length && project.length - deviceLayers.length > keymap.availableLayers) {
     throw new DeviceError(
       `レイヤー数 (${project.length}) がキーボードのファームウェアの上限 (${deviceLayers.length + keymap.availableLayers}) を超えています。OS 別 25 レイヤー版のファームウェアを書き込んでください (「ファイル」→「ZMK 設定一式 (ZIP)」)。`,
     );
   }
+  // 先に、書き込むキーがすべて書き込めるか確認 (途中で失敗して中途半端な状態にならないように)
+  for (const c of planApply(project, deviceLayers).bindings) bindingToDevice(c.binding, map);
   const tooLong = project.find((l) => new TextEncoder().encode(l.name).length > keymap.maxLayerNameLength);
   if (tooLong && keymap.maxLayerNameLength > 0) {
     throw new DeviceError(`レイヤー名「${tooLong.name}」が長すぎます (最大 ${keymap.maxLayerNameLength} バイト)`);

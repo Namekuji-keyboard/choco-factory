@@ -481,14 +481,9 @@ export const useEditor = create<EditorState>((set, get) => {
       const before = osInfo(project.os.systems[groupIndex].id);
       const after = osInfo(osId);
       const os: OsLayout = { ...project.os, systems: project.os.systems.map((s, i) => (i === groupIndex ? { ...s, id: osId } : s)) };
-      commit(`Bluetooth ${groupIndex + 1} の OS を ${after.name} に変更`, (p) => ({
-        os,
-        // 既定の名前 (例: "Win 2") のレイヤーだけ、新しい OS の名前に付け替える
-        layers: p.layers.map((l, i) => {
-          const s = splitLayerIndex(os, i);
-          return s.os === groupIndex && l.name === `${before.short} ${s.layer}` ? { ...l, name: `${after.short} ${s.layer}` } : l;
-        }),
-      }));
+      // OS の選択はアプリ側の設定 (キーの一覧・プリセットの切り替え) なので、キーボードへの書き込みは発生しない。
+      // レイヤー名も変えない (以前はここで名前を変えていたため、適用時にレイヤー名の書き込みと保存が発生していた)
+      commit(`Bluetooth ${groupIndex + 1} の OS を ${after.name} に変更 (${before.name} から)`, () => ({ os }));
     },
     copyOs(from, to) {
       const { project } = get();

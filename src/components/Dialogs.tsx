@@ -9,6 +9,7 @@ import { isProjectFile } from '../model/project';
 import { createBackup, restoreBackup } from '../storage/db';
 import { newId } from '../model/project';
 import { planApply } from '../device/sync';
+import { rpcLog } from '../device/studio';
 import type { Project } from '../model/types';
 import { bindingsEqual, combosEqual, layersFromParsed, parseKeymap, sensorsEqual } from '../zmk/keymap';
 import { shortcutBehaviors } from '../model/shortcuts';
@@ -138,6 +139,9 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           </button>
           {!dev && <span className="ml-2 text-xs text-muted">(接続中のみ)</span>}
         </div>
+      </Section>
+      <Section title="通信ログ (不具合の調査用)">
+        <RpcLogView />
       </Section>
       <Section title="データ">
         <p className="text-sm">
@@ -560,4 +564,26 @@ function fileOnlyChanges(project: Project): string[] {
     /* noop */
   }
   return out;
+}
+
+function RpcLogView() {
+  const [, setTick] = useState(0);
+  const text = rpcLog
+    .slice(-60)
+    .map((e) => `${new Date(e.time).toLocaleTimeString('ja-JP')} ${e.label} ${e.ms ?? '-'}ms${e.error ? ` ✕ ${e.error}` : ''}`)
+    .join('\n');
+  return (
+    <div>
+      <pre className="scroll-thin max-h-40 overflow-auto rounded-lg bg-surface-2 p-2 font-mono text-[10px] leading-snug text-muted">{text || '(まだ通信していません)'}</pre>
+      <div className="mt-1 flex gap-2">
+        <button className="btn-ghost py-1 text-xs" onClick={() => setTick((t) => t + 1)}>
+          更新
+        </button>
+        <button className="btn-ghost py-1 text-xs" onClick={() => navigator.clipboard?.writeText(text)}>
+          コピー
+        </button>
+      </div>
+      <p className="mt-1 text-[11px] text-muted">キーボードとの通信で問題が起きたときは、このログをコピーして送ってください。</p>
+    </div>
+  );
 }

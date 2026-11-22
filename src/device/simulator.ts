@@ -14,6 +14,7 @@ import type { BehaviorParameterValueDescription } from '@zmkfirmware/zmk-studio-
 import type { KeyboardDefinition } from '../model/types';
 import { BUILTIN_BEHAVIORS, type ParamKind } from '../zmk/behaviors';
 import { layersFromParsed, parseKeymap } from '../zmk/keymap';
+import { ZMK_STUDIO_UNSUPPORTED } from './wrappers';
 
 interface SimBinding {
   behaviorId: number;
@@ -33,6 +34,8 @@ interface SimState {
 }
 
 export interface SimulatorOptions {
+  /** この種類の要求には応答しない (タイムアウトの再現用。例: "keymap.saveChanges") */
+  hangOn?: string;
   /** ファームウェアに入っているキーマップ (省略時は同梱の Studio 版) */
   keymapSource?: string;
   locked?: boolean;
@@ -45,7 +48,7 @@ export class StudioSimulator {
   private stock: SimState;
   private saved: SimState;
   private live: SimState;
-  private behaviors: { id: number; displayName: string; params: ParamKind[] }[];
+  private behaviors: { id: number; label: string; displayName: string; params: ParamKind[] }[];
   private emit: ((bytes: Uint8Array) => void) | null = null;
   requestLog: string[] = [];
 
@@ -57,7 +60,7 @@ export class StudioSimulator {
     const parsed = parseKeymap(opts.keymapSource ?? kb.files.studio[kb.keymapPath]);
     const defs = [...BUILTIN_BEHAVIORS, ...parsed.customBehaviors];
     // ZMK と同様、ビヘイビア ID はデバイスごとのローカル ID (ここでは連番)
-    this.behaviors = defs.map((d, i) => ({ id: 100 + i, displayName: d.displayName, params: d.params }));
+    this.behaviors = defs.map((d, i) => ({ id: 100 + i, label: d.label, displayName: d.displayName, params: d.params }));
     const idOf = new Map(defs.map((d, i) => [d.label, 100 + i]));
     const layers = layersFromParsed(parsed);
     this.stock = {
@@ -116,6 +119,12 @@ export class StudioSimulator {
         decoder.transform!(chunk, {
           enqueue: (frame: Uint8Array) => {
             const req = Request.decode(frame);
+            if (this.opts.hangOn) {
+              const kind = Object.entries(req)
+                .filter(([k, v]) => k !== 'requestId' && v)
+                .map(([k, v]) => `${k}.${Object.entries(v as object).find(([, x]) => x !== undefined && x !== false)?.[0]}`)[0];
+              if (kind === this.opts.hangOn) return; // 応答しない (実機で処理が長引いた / 固まった状態の再現)
+            }
             const res = this.handle(req);
             // 実機と同様に非同期で応答
             setTimeout(() => this.emit?.(Response.encode(res).finish()), 1);
@@ -199,7 +208,10 @@ export class StudioSimulator {
         const { layerId, keyPosition, binding } = k.setLayerBinding;
         const layer = this.live.layers.find((l) => l.id === layerId);
         if (!layer || keyPosition < 0 || keyPosition >= layer.bindings.length) return reply({ keymap: { setLayerBinding: 1 } });
-        if (!binding || !this.behaviors.some((b) => b.id === binding.behaviorId)) return reply({ keymap: { setLayerBinding: 2 } });
+        const beh = binding && this.behaviors.find((b) => b.id === binding.behaviorId);
+        if (!binding || !beh) return reply({ keymap: { setLayerBinding: 2 } });
+        // ZMK v0.2.1 と同じく、パラメータ情報 (metadata) の無いビヘイビアは 0 以外のパラメータを受け付けない
+        if (ZMK_STUDIO_UNSUPPORTED.has(beh.label) && (binding.param1 || binding.param2)) return reply({ keymap: { setLayerBinding: 3 } });
         layer.bindings[keyPosition] = { behaviorId: binding.behaviorId, param1: binding.param1, param2: binding.param2 };
         this.notifyUnsaved();
         return reply({ keymap: { setLayerBinding: 0 } });

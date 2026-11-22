@@ -6,7 +6,8 @@ import { StudioSimulator } from '../device/simulator';
 import { applyToDevice, buildBehaviorMap, layersFromDevice, planApply, planSize, unknownLabel, type ApplyProgress, type BehaviorMap } from '../device/sync';
 import { findKeyboardByDeviceName } from '../keyboards';
 import { BUILTIN_BEHAVIORS, type BehaviorDef } from '../zmk/behaviors';
-import { customBehaviorsFor, registryFor, useEditor } from './editor';
+import { customBehaviorsFor, registryFor, scrollValFor, useEditor } from './editor';
+import { deviceWrappers } from '../device/wrappers';
 import { macroBehavior } from '../zmk/keymap';
 import { shortcutBehaviors } from '../model/shortcuts';
 import { inferOsDefaults } from '../model/os';
@@ -120,7 +121,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     onDisconnect: () => {
       if (get().dev) {
         set({ dev: null, status: 'disconnected', info: null, map: null, deviceLayers: null, pendingLoad: null, progress: null });
-        useEditor.getState().toast('info', 'キーボードとの接続が切れました');
+        useEditor.getState().toast('info', 'キーボードとの接続が切れました。再接続できない場合は USB ケーブルを抜き差ししてから「キーボードに接続」を押してください。');
       }
     },
   };
@@ -202,7 +203,7 @@ export const useDevice = create<DeviceState>((set, get) => {
           ...(ed.project?.macros.map(macroBehavior) ?? []),
           ...shortcutBehaviors(ed.project?.shortcuts),
         ];
-        const map = buildBehaviorMap(await dev.listBehaviors(), known);
+        const map = buildBehaviorMap(await dev.listBehaviors(), known, deviceWrappers(ed.project ? scrollValFor(ed.project.keymapSource) : 10));
         set({ map });
         const keymap = await dev.getKeymap();
         const layers = layersFromDevice(keymap, map, get().registry());

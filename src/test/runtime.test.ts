@@ -113,8 +113,8 @@ describe('Bluetooth プロファイルごとの OS', () => {
     const p = ed().project!;
     expect(p.os!.systems.map((s) => s.id)).toEqual(['windows', 'macos', 'ios', 'linux', 'windows']);
     expect(p.layers.map((l) => l.bindings)).toEqual(before.layers.map((l) => l.bindings));
-    expect(p.layers[20].name).toBe('Win 0'); // 既定の名前は新しい OS の名前に
-    expect(p.layers[10].name).toBe('iOS 0');
+    // OS を変えてもレイヤー名は変えない (キーボードへの書き込みが発生しないように)
+    expect(p.layers.map((l) => l.name)).toEqual(before.layers.map((l) => l.name));
     // OS 切替キーは「Bluetooth プロファイル番号」で決まるので変わらない
     expect(p.layers[4].bindings[19]).toEqual({ b: 'os_sel', p: [4, 20] });
     ed().undo();

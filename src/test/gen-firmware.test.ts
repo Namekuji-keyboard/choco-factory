@@ -5,6 +5,7 @@ import { exportKeymap, layersFromParsed, parseKeymap } from '../zmk/keymap';
 import { osLayersFromKeymap } from '../model/project';
 import { OS_LIST, absLayer, defaultOsLayout, osSelectBinding } from '../model/os';
 import { padRuntimeLayers } from '../model/runtime';
+import { wrapperDefinitions } from '../device/wrappers';
 
 /**
  * firmware/choco-key/studio/config/Choco-Key.keymap (OS 別 25 レイヤー + 即時編集用の仮想キー) を生成する。
@@ -44,7 +45,13 @@ it.skipIf(!process.env.GEN_FW)('generate firmware keymap', () => {
   }).join('\n\n');
   src = src.replace(
     /(\n    macros \{\n)/,
-    `$1        // ---- Choco Factory 即時編集マクロ: 中身 (仮想キー ${rt.macroBase}〜${rt.comboConfigBase - 1}) は ZMK Studio で変更 ----\n${macroNodes}\n\n`,
+    `$1        // ---- Choco Factory 即時編集マクロ: 中身 (仮想キー ${rt.macroBase}〜${rt.comboConfigBase - 1}) は ZMK Studio で変更 ----\n${macroNodes}\n\n` +
+      `        // ---- ZMK Studio から書き込めない &msc / &mmv / &mkp の代わり (ZMK v0.2.1 はこれらのパラメータを検証できないため) ----\n` +
+      wrapperDefinitions(parseKeymap(src).scrollVal)
+        .split('\n')
+        .map((l) => (l ? '        ' + l : l))
+        .join('\n') +
+      '\n\n',
   );
   src = src.replace(
     /(\n    behaviors \{\n)/,

@@ -5,6 +5,7 @@ import { StudioSimulator } from '../device/simulator';
 import { applyToDevice, buildBehaviorMap, layersFromDevice, planApply } from '../device/sync';
 import { behaviorRegistry, layersFromParsed, parseKeymap } from '../zmk/keymap';
 import { BUILTIN_BEHAVIORS } from '../zmk/behaviors';
+import { deviceWrappers } from '../device/wrappers';
 import { keycodeByName } from '../zmk/keycodes';
 
 const parsed = parseKeymap(chocoKey.files.studio[chocoKey.keymapPath]);
@@ -24,7 +25,7 @@ describe('ZMK Studio RPC (シミュレーター)', () => {
     const { dev } = await setup();
     const info = await dev.getDeviceInfo();
     expect(info.name).toBe('Choco-Key');
-    const map = buildBehaviorMap(await dev.listBehaviors(), known);
+    const map = buildBehaviorMap(await dev.listBehaviors(), known, deviceWrappers(parsed.scrollVal));
     expect(map.byLabel.get('kp')).toBeDefined();
     expect(map.byLabel.get('ind_bat')).toBeDefined();
     expect(map.byLabel.get('lt_to_layer_0')).toBeDefined();
@@ -54,7 +55,7 @@ describe('ZMK Studio RPC (シミュレーター)', () => {
 
   it('編集内容を書き込み、フラッシュに保存し、電源再投入後も維持される', async () => {
     const { sim, dev } = await setup();
-    const map = buildBehaviorMap(await dev.listBehaviors(), known);
+    const map = buildBehaviorMap(await dev.listBehaviors(), known, deviceWrappers(parsed.scrollVal));
     const layers = layersFromDevice(await dev.getKeymap(), map, registry);
     layers[0].bindings[0] = { b: 'mt', p: [keycodeByName('LSHFT')!.value, keycodeByName('Z')!.value] };
     layers[6].bindings[5] = { b: 'mo', p: [8] }; // macOS Layer 1 → macOS Layer 3
@@ -87,7 +88,7 @@ describe('ZMK Studio RPC (シミュレーター)', () => {
     const old = chocoKey.files.pristine![chocoKey.keymapPath];
     const sim = new StudioSimulator(chocoKey, { keymapSource: old, storage: { load: () => flash, save: (v) => (flash = v), clear: () => (flash = null) } });
     const dev = StudioDevice.fromTransport(sim.transport(), 'usb', {});
-    const map = buildBehaviorMap(await dev.listBehaviors(), known);
+    const map = buildBehaviorMap(await dev.listBehaviors(), known, deviceWrappers(parsed.scrollVal));
     const deviceLayers = layersFromDevice(await dev.getKeymap(), map, registry);
     expect(deviceLayers).toHaveLength(5);
     const project = layersFromParsed(parsed);
@@ -97,7 +98,7 @@ describe('ZMK Studio RPC (シミュレーター)', () => {
 
   it('ファームウェアに無いビヘイビアは書き込む前にエラー', async () => {
     const { sim, dev } = await setup();
-    const map = buildBehaviorMap(await dev.listBehaviors(), known);
+    const map = buildBehaviorMap(await dev.listBehaviors(), known, deviceWrappers(parsed.scrollVal));
     const layers = layersFromDevice(await dev.getKeymap(), map, registry);
     layers[0].bindings[0] = { b: 'my_new_macro', p: [] };
     await expect(applyToDevice(dev, layers, map, registry, () => {})).rejects.toThrow(/my_new_macro/);

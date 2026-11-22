@@ -1,13 +1,13 @@
 diff -ruN choco-key/original/CMakeLists.txt choco-key/studio/CMakeLists.txt
 --- choco-key/original/CMakeLists.txt	1970-01-01 09:00:00.000000000 +0900
-+++ choco-key/studio/CMakeLists.txt	2026-11-22 21:41:18.480963171 +0900
++++ choco-key/studio/CMakeLists.txt	2026-11-22 22:42:12.463499429 +0900
 @@ -0,0 +1,3 @@
 +# Choco Factory: ZMK Studio からエンコーダー・マクロ・コンボを即時変更するためのビヘイビア
 +target_sources_ifdef(CONFIG_CHOCO_BEHAVIOR_VKEY app PRIVATE src/behavior_vkey.c)
 +target_sources_ifdef(CONFIG_CHOCO_RUNTIME_COMBO app PRIVATE src/runtime_combo.c)
 diff -ruN choco-key/original/Kconfig choco-key/studio/Kconfig
 --- choco-key/original/Kconfig	1970-01-01 09:00:00.000000000 +0900
-+++ choco-key/studio/Kconfig	2026-11-22 21:41:18.483783730 +0900
++++ choco-key/studio/Kconfig	2026-11-22 22:42:12.467517094 +0900
 @@ -0,0 +1,22 @@
 +# Choco Factory runtime configuration (ZMK v0.2.1)
 +
@@ -32,8 +32,8 @@ diff -ruN choco-key/original/Kconfig choco-key/studio/Kconfig
 +    default 4
 +    depends on CHOCO_RUNTIME_COMBO
 diff -ruN choco-key/original/build.yaml choco-key/studio/build.yaml
---- choco-key/original/build.yaml	2026-11-22 21:41:18.301416962 +0900
-+++ choco-key/studio/build.yaml	2026-11-22 21:41:18.431815239 +0900
+--- choco-key/original/build.yaml	2026-11-22 22:42:12.230368977 +0900
++++ choco-key/studio/build.yaml	2026-11-22 22:42:12.397315272 +0900
 @@ -1,7 +1,12 @@
  ---
 +# ZMK Studio 対応版:
@@ -48,8 +48,8 @@ diff -ruN choco-key/original/build.yaml choco-key/studio/build.yaml
      shield: Choco-Key_L rgbled_adapter
    - board: seeeduino_xiao_ble
 diff -ruN choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choco-Key.keymap
---- choco-key/original/config/Choco-Key.keymap	2026-11-22 21:41:18.268601660 +0900
-+++ choco-key/studio/config/Choco-Key.keymap	2026-11-22 21:41:18.447651809 +0900
+--- choco-key/original/config/Choco-Key.keymap	2026-11-22 22:42:12.188339830 +0900
++++ choco-key/studio/config/Choco-Key.keymap	2026-11-22 22:42:12.420020202 +0900
 @@ -1,3 +1,17 @@
 +/*
 + * Choco-Key キーマップ (OS 別 25 レイヤー + 即時編集 / Choco Factory で生成)
@@ -68,7 +68,7 @@ diff -ruN choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Cho
  #include <behaviors.dtsi>
  #include <dt-bindings/zmk/bt.h>
  #include <dt-bindings/zmk/keys.h>
-@@ -15,15 +29,115 @@
+@@ -15,15 +29,246 @@
      combos { compatible = "zmk,combos"; };
  
      macros {
@@ -125,6 +125,137 @@ diff -ruN choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Cho
 +            wait-ms = <10>;
 +            tap-ms = <10>;
 +            bindings = <&vkey 86 &vkey 87 &vkey 88 &vkey 89 &vkey 90 &vkey 91 &vkey 92 &vkey 93>;
++        };
++
++        // ---- ZMK Studio から書き込めない &msc / &mmv / &mkp の代わり (ZMK v0.2.1 はこれらのパラメータを検証できないため) ----
++        cf_scrl_up: cf_scrl_up {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_scrl_up";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 上スクロール: 押している間 &msc SCRL_UP を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &msc SCRL_UP>, <&macro_pause_for_release>, <&macro_release &msc SCRL_UP>;
++        };
++
++        cf_scrl_dn: cf_scrl_dn {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_scrl_dn";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 下スクロール: 押している間 &msc SCRL_DOWN を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &msc SCRL_DOWN>, <&macro_pause_for_release>, <&macro_release &msc SCRL_DOWN>;
++        };
++
++        cf_scrl_lt: cf_scrl_lt {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_scrl_lt";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 左スクロール: 押している間 &msc SCRL_LEFT を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &msc SCRL_LEFT>, <&macro_pause_for_release>, <&macro_release &msc SCRL_LEFT>;
++        };
++
++        cf_scrl_rt: cf_scrl_rt {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_scrl_rt";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 右スクロール: 押している間 &msc SCRL_RIGHT を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &msc SCRL_RIGHT>, <&macro_pause_for_release>, <&macro_release &msc SCRL_RIGHT>;
++        };
++
++        cf_move_up: cf_move_up {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_move_up";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 上へ移動: 押している間 &mmv MOVE_UP を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &mmv MOVE_UP>, <&macro_pause_for_release>, <&macro_release &mmv MOVE_UP>;
++        };
++
++        cf_move_dn: cf_move_dn {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_move_dn";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 下へ移動: 押している間 &mmv MOVE_DOWN を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &mmv MOVE_DOWN>, <&macro_pause_for_release>, <&macro_release &mmv MOVE_DOWN>;
++        };
++
++        cf_move_lt: cf_move_lt {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_move_lt";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 左へ移動: 押している間 &mmv MOVE_LEFT を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &mmv MOVE_LEFT>, <&macro_pause_for_release>, <&macro_release &mmv MOVE_LEFT>;
++        };
++
++        cf_move_rt: cf_move_rt {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_move_rt";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 右へ移動: 押している間 &mmv MOVE_RIGHT を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &mmv MOVE_RIGHT>, <&macro_pause_for_release>, <&macro_release &mmv MOVE_RIGHT>;
++        };
++
++        cf_lclk: cf_lclk {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_lclk";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 左クリック: 押している間 &mkp LCLK を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &mkp LCLK>, <&macro_pause_for_release>, <&macro_release &mkp LCLK>;
++        };
++
++        cf_rclk: cf_rclk {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_rclk";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 右クリック: 押している間 &mkp RCLK を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &mkp RCLK>, <&macro_pause_for_release>, <&macro_release &mkp RCLK>;
++        };
++
++        cf_mclk: cf_mclk {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_mclk";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 中クリック: 押している間 &mkp MCLK を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &mkp MCLK>, <&macro_pause_for_release>, <&macro_release &mkp MCLK>;
++        };
++
++        cf_mb4: cf_mb4 {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_mb4";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 戻る (ボタン4): 押している間 &mkp MB4 を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &mkp MB4>, <&macro_pause_for_release>, <&macro_release &mkp MB4>;
++        };
++
++        cf_mb5: cf_mb5 {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "cf_mb5";
++            wait-ms = <0>;
++            tap-ms = <0>;
++            // 進む (ボタン5): 押している間 &mkp MB5 を押し続ける (ZMK Studio から書き込めるようにするため)
++            bindings = <&macro_press &mkp MB5>, <&macro_pause_for_release>, <&macro_release &mkp MB5>;
 +        };
 +
          to_layer_0: to_layer_0 {
@@ -184,7 +315,7 @@ diff -ruN choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Cho
          lt_to_layer_0: lt_to_layer_0 {
              compatible = "zmk,behavior-hold-tap";
              label = "LAYER_TAP_TO_0";
-@@ -54,58 +168,528 @@
+@@ -54,58 +299,528 @@
          compatible = "zmk,keymap";
  
          default_layer {
@@ -726,8 +857,8 @@ diff -ruN choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Cho
      };
  };
 diff -ruN choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi
---- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 21:41:18.220587456 +0900
-+++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 21:41:18.468601586 +0900
+--- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 22:42:12.131260863 +0900
++++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 22:42:12.449696697 +0900
 @@ -1,20 +1,170 @@
  #include <dt-bindings/zmk/matrix_transform.h>
 +#include <physical_layouts.dtsi>
@@ -902,8 +1033,8 @@ diff -ruN choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi choc
      };
      
 diff -ruN choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml
---- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 21:41:18.238569011 +0900
-+++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 21:41:18.465511222 +0900
+--- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 22:42:12.155966674 +0900
++++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 22:42:12.439260740 +0900
 @@ -6,3 +6,4 @@
  requires: [seeeduino_xiao_ble]
  features:
@@ -911,7 +1042,7 @@ diff -ruN choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml c
 +  - studio
 diff -ruN choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-runtime-combos.yaml choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-runtime-combos.yaml
 --- choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-runtime-combos.yaml	1970-01-01 09:00:00.000000000 +0900
-+++ choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-runtime-combos.yaml	2026-11-22 21:41:18.420601605 +0900
++++ choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-runtime-combos.yaml	2026-11-22 22:42:12.386432745 +0900
 @@ -0,0 +1,29 @@
 +description: |
 +  Combo configuration slot. The two parameters encode the combo (key positions, timeout,
@@ -944,7 +1075,7 @@ diff -ruN choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-runtime-c
 +    default: 5
 diff -ruN choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml
 --- choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml	1970-01-01 09:00:00.000000000 +0900
-+++ choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml	2026-11-22 21:41:18.428737883 +0900
++++ choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml	2026-11-22 22:42:12.392947384 +0900
 @@ -0,0 +1,8 @@
 +description: |
 +  Virtual key. Pressing it presses the keymap binding at the given (virtual) key position
@@ -956,7 +1087,7 @@ diff -ruN choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml
 +include: one_param.yaml
 diff -ruN choco-key/original/src/behavior_vkey.c choco-key/studio/src/behavior_vkey.c
 --- choco-key/original/src/behavior_vkey.c	1970-01-01 09:00:00.000000000 +0900
-+++ choco-key/studio/src/behavior_vkey.c	2026-11-22 21:41:18.441223171 +0900
++++ choco-key/studio/src/behavior_vkey.c	2026-11-22 22:42:12.407260753 +0900
 @@ -0,0 +1,84 @@
 +/*
 + * Choco Factory: virtual key behavior
@@ -1044,7 +1175,7 @@ diff -ruN choco-key/original/src/behavior_vkey.c choco-key/studio/src/behavior_v
 +#endif
 diff -ruN choco-key/original/src/runtime_combo.c choco-key/studio/src/runtime_combo.c
 --- choco-key/original/src/runtime_combo.c	1970-01-01 09:00:00.000000000 +0900
-+++ choco-key/studio/src/runtime_combo.c	2026-11-22 21:41:18.437769238 +0900
++++ choco-key/studio/src/runtime_combo.c	2026-11-22 22:42:12.406086617 +0900
 @@ -0,0 +1,354 @@
 +/*
 + * Choco Factory: ZMK Studio から編集できるコンボ
@@ -1401,8 +1532,8 @@ diff -ruN choco-key/original/src/runtime_combo.c choco-key/studio/src/runtime_co
 +#endif /* CHOCO_HAS_KEYMAP */
 +#endif /* DT_HAS_COMPAT_STATUS_OKAY */
 diff -ruN choco-key/original/zephyr/module.yml choco-key/studio/zephyr/module.yml
---- choco-key/original/zephyr/module.yml	2026-11-22 21:41:18.298466116 +0900
-+++ choco-key/studio/zephyr/module.yml	2026-11-22 21:41:18.477933435 +0900
+--- choco-key/original/zephyr/module.yml	2026-11-22 22:42:12.226355409 +0900
++++ choco-key/studio/zephyr/module.yml	2026-11-22 22:42:12.455260736 +0900
 @@ -1,3 +1,7 @@
 +name: choco-key
  build:

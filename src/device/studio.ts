@@ -5,7 +5,7 @@
  * @zmkfirmware/zmk-studio-ts-client をそのまま使用し、独自実装はしていません。
  * このモジュールはタイムアウト・エラー処理・通知の購読を追加したラッパーです。
  */
-import { call_rpc, create_rpc_connection, type RpcConnection, type Notification } from '@zmkfirmware/zmk-studio-ts-client';
+import { create_rpc_connection, type RpcConnection, type Notification, type Request as RpcRequest, type RequestResponse } from '@zmkfirmware/zmk-studio-ts-client';
 import type { RpcTransport } from '@zmkfirmware/zmk-studio-ts-client/transport/index';
 import { connect as connectSerial } from '@zmkfirmware/zmk-studio-ts-client/transport/serial';
 import { LockState } from '@zmkfirmware/zmk-studio-ts-client/core';
@@ -24,13 +24,26 @@ export type { Keymap, PhysicalLayouts, BehaviorBinding, GetBehaviorDetailsRespon
 export type TransportKind = 'usb' | 'ble';
 
 export class DeviceError extends Error {}
+class TimeoutError extends Error {}
 
 export function isSerialSupported(): boolean {
   return typeof navigator !== 'undefined' && 'serial' in navigator;
 }
 
-type Request = Parameters<typeof call_rpc>[1];
-type RequestResponse = Awaited<ReturnType<typeof call_rpc>>;
+type Request = Omit<RpcRequest, 'requestId'>;
+
+/** 通信ログ (不具合の調査用。設定画面に表示) */
+export interface RpcLogEntry {
+  time: number;
+  label: string;
+  ms?: number;
+  error?: string;
+}
+export const rpcLog: RpcLogEntry[] = [];
+export function logRpc(e: RpcLogEntry) {
+  rpcLog.push(e);
+  if (rpcLog.length > 200) rpcLog.shift();
+}
 
 export interface DeviceInfo {
   name: string;
@@ -50,7 +63,9 @@ export class StudioDevice {
   private closed = false;
   readonly label: string;
   readonly kind: TransportKind;
-  timeoutMs = 5000;
+  timeoutMs = 8000;
+  /** フラッシュへの保存・破棄は時間がかかることがあるので長めに待つ */
+  saveTimeoutMs = 60000;
 
   private constructor(
     private transport: RpcTransport,
@@ -118,35 +133,86 @@ export class StudioDevice {
     this.handleClosed('disconnect');
   }
 
-  /** RPC を呼び出す。応答が無い場合は接続を閉じてエラーにする */
-  async call(req: Request, timeoutMs = this.timeoutMs): Promise<RequestResponse> {
-    if (this.closed) throw new DeviceError('キーボードとの接続が切れています');
+  // ---- RPC ----
+  // 公式クライアントの call_rpc() は「ページ全体で 1 つ」のロックを使うため、応答が返らないまま接続を閉じると
+  // ロックが解放されず、再接続しても以後の通信がすべて止まってしまう (ページを再読み込みするまで復旧しない)。
+  // そこで要求・応答のやり取りだけを接続ごとに行う (protobuf・フレーミングは公式クライアントのものをそのまま使用)。
+  private queue: Promise<unknown> = Promise.resolve();
+  private responseReader?: ReadableStreamDefaultReader<RequestResponse>;
+  private pendingRead: Promise<ReadableStreamReadResult<RequestResponse>> | null = null;
+  private nextRequestId = 1;
+
+  private nextResponse(ms: number): Promise<ReadableStreamReadResult<RequestResponse> | 'timeout'> {
+    this.responseReader ??= this.conn.request_response_readable.getReader();
+    if (!this.pendingRead) {
+      this.pendingRead = this.responseReader.read().finally(() => {
+        this.pendingRead = null;
+      });
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        reject(
-          new DeviceError(
-            'キーボードから応答がありません。ZMK Studio が有効なファームウェアか、セントラル側 (Choco-Key では右手) を接続しているか確認してください。',
-          ),
-        );
-      }, timeoutMs);
-    });
+    return Promise.race([
+      this.pendingRead,
+      new Promise<'timeout'>((r) => {
+        timer = setTimeout(() => r('timeout'), Math.max(1, ms));
+      }),
+    ]).finally(() => clearTimeout(timer));
+  }
+
+  private async rpc(req: Request, timeoutMs: number): Promise<RequestResponse> {
+    const requestId = this.nextRequestId++;
+    const writer = this.conn.request_writable.getWriter();
     try {
-      return await Promise.race([call_rpc(this.conn, req), timeout]);
-    } catch (e) {
-      if (e instanceof DeviceError) {
-        await this.disconnect();
-        throw e;
-      }
-      if (e && typeof e === 'object' && 'condition' in e) {
-        const c = (e as { condition: ErrorConditions }).condition;
+      await writer.write({ ...req, requestId } as never);
+    } finally {
+      writer.releaseLock();
+    }
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const r = await this.nextResponse(deadline - Date.now());
+      if (r === 'timeout') throw new TimeoutError();
+      if (r.done || !r.value) throw new DeviceError('キーボードとの接続が切れました');
+      // 以前にタイムアウトした要求の遅れて届いた応答は読み飛ばす
+      if (r.value.requestId !== requestId) continue;
+      const v = r.value;
+      if (v.meta?.noResponse) throw new DeviceError('キーボードが応答できない要求でした');
+      if (v.meta?.simpleError !== undefined) {
+        const c = v.meta.simpleError;
         if (c === ErrorConditions.UNLOCK_REQUIRED) throw new LockedError();
         throw new DeviceError(`キーボードがエラーを返しました (${ErrorConditions[c] ?? c})`);
       }
-      throw new DeviceError(`通信エラー: ${String((e as Error)?.message ?? e)}`);
-    } finally {
-      clearTimeout(timer);
+      return v;
     }
+  }
+
+  /** RPC を呼び出す (接続ごとに 1 つずつ順番に)。応答が無い場合は接続を閉じてエラーにする */
+  call(req: Request, timeoutMs = this.timeoutMs): Promise<RequestResponse> {
+    const label = Object.entries(req)
+      .filter(([k]) => k !== 'requestId')
+      .filter(([, v]) => v)
+      .map(([k, v]) => `${k}.${Object.entries(v as object).find(([, x]) => x !== undefined && x !== false)?.[0] ?? ''}`)
+      .join(',');
+    const run = async () => {
+      if (this.closed) throw new DeviceError('キーボードとの接続が切れています');
+      const t0 = Date.now();
+      try {
+        const v = await this.rpc(req, timeoutMs);
+        logRpc({ time: t0, label, ms: Date.now() - t0 });
+        return v;
+      } catch (e) {
+        logRpc({ time: t0, label, ms: Date.now() - t0, error: e instanceof Error ? e.message || e.name : String(e) });
+        if (e instanceof TimeoutError) {
+          await this.disconnect();
+          throw new DeviceError(
+            `キーボードから ${Math.round(timeoutMs / 1000)} 秒以内に応答がありませんでした (${label})。USB ケーブルを抜き差ししてから、もう一度「キーボードに接続」してください。`,
+          );
+        }
+        if (e instanceof DeviceError || e instanceof LockedError) throw e;
+        throw new DeviceError(`通信エラー: ${String((e as Error)?.message ?? e)}`);
+      }
+    };
+    const p = this.queue.then(run, run);
+    this.queue = p.catch(() => undefined);
+    return p;
   }
 
   // ---- core ----
@@ -168,7 +234,7 @@ export class StudioDevice {
 
   /** ファームウェアの初期キーマップに戻す (保存済みの変更をすべて削除) */
   async resetSettings(): Promise<boolean> {
-    const r = await this.call({ core: { resetSettings: true } }, 15000);
+    const r = await this.call({ core: { resetSettings: true } }, 60000);
     return !!r.core?.resetSettings;
   }
 
@@ -233,7 +299,8 @@ export class StudioDevice {
 
   /** 変更内容をフラッシュ (不揮発メモリ) に保存 */
   async saveChanges(): Promise<void> {
-    const r = await this.call({ keymap: { saveChanges: true } }, 15000);
+    // フラッシュへの保存 (NVS のガベージコレクションが走ると数秒かかることがある) は長めに待つ
+    const r = await this.call({ keymap: { saveChanges: true } }, this.saveTimeoutMs);
     const res = r.keymap?.saveChanges;
     if (!res?.ok) {
       const msg: Record<number, string> = {
@@ -245,7 +312,7 @@ export class StudioDevice {
   }
 
   async discardChanges(): Promise<void> {
-    await this.call({ keymap: { discardChanges: true } });
+    await this.call({ keymap: { discardChanges: true } }, this.saveTimeoutMs);
   }
 }
 
