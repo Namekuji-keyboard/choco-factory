@@ -20,7 +20,8 @@ export const safeName = (s: string) => s.replace(/[\\/:*?"<>|\s]+/g, '_').slice(
 
 export function buildKeymap(project: Project, kb: KeyboardDefinition) {
   return exportKeymap(project.keymapSource, project.layers, kb, project.macros, {
-    combos: project.combos,
+    // 即時編集に対応したキーボードでは、コンボはキーマップの仮想キーに入っている
+    combos: kb.runtime ? undefined : project.combos,
     extraBehaviors: shortcutBehaviors(project.shortcuts),
     osMacros: !!project.os,
   });
@@ -32,7 +33,7 @@ const README = (kb: KeyboardDefinition, variant: ZipVariant, project: Project) =
 
 - プロジェクト: ${project.name}
 - 出力日時: ${new Date().toLocaleString('ja-JP')}
-- 構成: ${variant === 'studio' ? 'ZMK Studio 対応版 (Web から直接キーマップを書き込めます)' : '元の構成 (ZMK Studio 無効)'}
+- 構成: ${variant === 'studio' ? 'ZMK Studio 対応版 (Web から直接キーマップを書き込めます)' : 'ZMK Studio 無効版 (即時編集用の仮想キー・モジュールは含む。Web からの書き込みはできません)'}
 - ZMK: ${kb.zmkVersion}
 ${project.os ? `- キーマップ: OS 別 ${project.layers.length} レイヤー (Windows 0〜4 / macOS 5〜9 / Linux 10〜14 / iOS 15〜19 / Android 20〜24)
 ` : ''}
@@ -51,7 +52,8 @@ ${variant === 'studio' ? `
 - 編集を許可するには、キーボード上で &studio_unlock (Layer 4 の右手最上段左端) を押します。
 - Studio で保存したキーマップはフラッシュに保存され、以後このファイルのキーマップより優先されます。
   ファイル側の変更を反映したいときは、Web アプリの「キーボードを初期化」を実行してください。
-- エンコーダーの割り当て・コンボ・ショートカット (複数キーのマクロ) は ZMK Studio では書き込めないため、このファイルでビルドして反映します。
+- エンコーダー・マクロ・コンボは仮想キー (キー 43〜126) として ZMK Studio から即時に書き込めます (src/ の Choco Factory モジュール)。
+- 複数の通常キーを同時に押すショートカット (sc_*) は ZMK Studio では作成できないため、このファイルでビルドして反映します。
 ` : ''}`;
 
 export async function buildZip(project: Project, kb: KeyboardDefinition, variant: ZipVariant): Promise<{ blob: Blob; warnings: string[] }> {

@@ -12,6 +12,7 @@ import { planApply } from '../device/sync';
 import type { Project } from '../model/types';
 import { bindingsEqual, combosEqual, layersFromParsed, parseKeymap, sensorsEqual } from '../zmk/keymap';
 import { shortcutBehaviors } from '../model/shortcuts';
+import { positionKind } from '../model/runtime';
 
 // ---------------------------------------------------------------------------
 // プロジェクト管理
@@ -220,7 +221,7 @@ export function FilesDialog({ open, onClose }: { open: boolean; onClose: () => v
                 ZMK Studio 対応版 (推奨)
               </button>
               <button className="chip" data-on={variant === 'original'} onClick={() => setVariant('original')}>
-                元の構成
+                ZMK Studio 無効版
               </button>
             </div>
           </ExportCard>
@@ -302,7 +303,7 @@ export function HelpDialog({ open, onClose, onFiles }: { open: boolean; onClose:
           <li>XIAO nRF52840 のリセットボタンを素早く 2 回押すと USB ドライブとして認識されるので、右手・左手それぞれの .uf2 をコピーします。</li>
         </ol>
         <p className="mt-2 rounded-lg bg-surface-2 p-2 text-xs text-muted">
-          変更点: 右手 (セントラル) のビルドに <code>studio-rpc-usb-uart</code> と <code>CONFIG_ZMK_STUDIO=y</code> を追加、物理レイアウトの定義、OS 別 25 レイヤー (Windows / macOS / Linux / iOS / Android × Layer 0〜4)、各 OS の Layer 4 に <code>&amp;studio_unlock</code> と OS 切替キー。左右間の BLE 通信や他の設定は変更していません。キーの割り当てだけなら、2 回目以降は .uf2 の書き込みは不要です (エンコーダー・コンボ・複数キーのショートカットを変えたときはビルドと書き込みが必要)。
+          変更点: 右手 (セントラル) のビルドに <code>studio-rpc-usb-uart</code> と <code>CONFIG_ZMK_STUDIO=y</code> を追加、物理レイアウトの定義、OS 別 25 レイヤー (Windows / macOS / Linux / iOS / Android × Layer 0〜4)、各 OS の Layer 4 に <code>&amp;studio_unlock</code> と OS 切替キー、エンコーダー・マクロ・コンボを即時に変更するためのモジュール (仮想キー)。左右間の BLE 通信や他の設定は変更していません。2 回目以降は、キー・エンコーダー・マクロ・コンボを変えても .uf2 の書き込みは不要です (複数キーを同時に押すショートカットを使うときだけビルドが必要)。
         </p>
       </Section>
       <Section title="2. キーボードに接続する">
@@ -324,9 +325,9 @@ export function HelpDialog({ open, onClose, onFiles }: { open: boolean; onClose:
       </Section>
       <Section title="できること / できないこと (ZMK Studio の仕様)">
         <ul className="list-disc space-y-1 pl-5 text-sm">
-          <li>✅ 25 レイヤーすべてのキーの割り当て・レイヤー名・OS 切替キー・修飾キー + 1 キーのショートカットは Web から直接書き込めます。</li>
-          <li>⚠️ マクロ・複数キーのショートカット・コンボ・エンコーダーの割り当て・タップ時間などの設定は ZMK Studio が未対応のため、ZIP を出力してファームウェアをビルドする必要があります。</li>
-          <li>ℹ️ OS 別のデフォルトレイヤーは、OS 切替キー (Layer 4 の右手 2 段目) で切り替わります。ZMK は接続先の OS を判別できないため、自動切り替えはしません。電源を入れた直後は Windows Layer 0 になります。</li>
+          <li>✅ 25 レイヤーすべてのキーの割り当て・レイヤー名・OS 切替キー・修飾キー + 1 キーのショートカットに加え、エンコーダー (レイヤーごと)・マクロ (6 個 × 8 ステップ)・コンボ (16 個) も Web から直接書き込めます (このアプリ用のファームウェアが必要)。</li>
+          <li>⚠️ 複数の通常キーを同時に押すショートカット・タップ時間などの設定は、ZIP を出力してファームウェアをビルドする必要があります。</li>
+          <li>ℹ️ Bluetooth プロファイルごとに OS を選べます。OS 切替キー (Layer 4 の右手 2 段目) で Bluetooth プロファイルとそのデフォルトレイヤーが切り替わります。ZMK は接続先の OS を判別できないため、自動切り替えはしません。電源を入れた直後は Bluetooth 1 の Layer 0 になります。</li>
           <li>ℹ️ Web アプリとキーボードの Bluetooth 接続は、Windows / macOS のブラウザでは ZMK 公式に未対応のため提供していません (USB で接続してください)。キーボード本来の Bluetooth 接続には影響しません。</li>
           <li>ℹ️ Web から保存したキーマップは .keymap ファイルより優先されます。ファイル側を反映したいときは「設定」→「キーボードを初期化」。</li>
         </ul>
@@ -343,10 +344,19 @@ export function ApplyDialog({ open, onClose, onConfirm }: { open: boolean; onClo
   const deviceLayers = useDevice((s) => s.deviceLayers);
   const info = useDevice((s) => s.info);
   const diff = useDeviceDiff();
+  const kb = useEditor((s) => s.keyboard);
   if (!project || !deviceLayers) return null;
   const plan = planApply(project.layers, deviceLayers);
+  const rt = kb.runtime;
   const byLayer = new Map<number, number>();
-  plan.bindings.forEach((b) => byLayer.set(b.layerIndex, (byLayer.get(b.layerIndex) ?? 0) + 1));
+  const kinds = { encoder: 0, macro: 0, combo: 0 };
+  plan.bindings.forEach((b) => {
+    const k = positionKind(rt, b.position);
+    if (k === 'physical') byLayer.set(b.layerIndex, (byLayer.get(b.layerIndex) ?? 0) + 1);
+    else if (k === 'encoder') kinds.encoder++;
+    else if (k === 'macro') kinds.macro++;
+    else kinds.combo++;
+  });
   const stored = estimateStoredBindings(project);
   const fileOnly = fileOnlyChanges(project);
   return (
@@ -381,6 +391,9 @@ export function ApplyDialog({ open, onClose, onConfirm }: { open: boolean; onClo
             ・{project.layers[li]?.name}: {n} 個のキー
           </li>
         ))}
+        {kinds.encoder > 0 && <li>・エンコーダー: {kinds.encoder} 件</li>}
+        {kinds.macro > 0 && <li>・マクロの中身: {kinds.macro} ステップ</li>}
+        {kinds.combo > 0 && <li>・コンボ: {kinds.combo} 件 (設定・動作)</li>}
       </ul>
       {fileOnly.length > 0 && (
         <p className="mt-3 rounded-lg bg-warn/10 p-2 text-xs text-warn">
@@ -540,7 +553,7 @@ function fileOnlyChanges(project: Project): string[] {
   try {
     const parsed = parseKeymap(project.keymapSource);
     if (project.layers.some((l, i) => l.sensors && !sensorsEqual(l.sensors, parsed.layers[i]?.sensors))) out.push('エンコーダーの割り当て');
-    if (project.combos && !combosEqual(project.combos, parsed.combos)) out.push('コンボ');
+    if (project.combos?.length && !combosEqual(project.combos, parsed.combos)) out.push('コンボ');
     if (shortcutBehaviors(project.shortcuts).some((d) => !parsed.labels.has(d.label))) out.push('複数キーのショートカット');
     if (project.macros.length) out.push('マクロ');
   } catch {

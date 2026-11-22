@@ -1,5 +1,5 @@
 import type { Binding, Layer, OsLayout, ShortcutDef } from '../model/types';
-import { OS_LIST, osLayerLabel, splitLayerIndex } from '../model/os';
+import { groupOs, osLayerLabel, splitLayerIndex } from '../model/os';
 import { findShortcutFor } from '../model/shortcuts';
 import { keycodeDescriptionJa } from '../zmk/keycodes.ja';
 import { BL_COMMANDS, BT_COMMANDS, EP_COMMANDS, MOUSE_BUTTONS, MOUSE_MOVES, OUT_COMMANDS, RGB_COMMANDS, mouseScrolls, type BehaviorDef } from '../zmk/behaviors';
@@ -56,7 +56,7 @@ function osSwitchDisplay(b: Binding, ctx: DisplayContext): KeyDisplay | null {
   if (b.b !== 'os_sel' && b.b !== 'os_to') return null;
   const target = b.b === 'os_sel' ? b.p[1] : b.p[0];
   const idx = ctx.layers.findIndex((l) => l.id === target);
-  const osName = ctx.os && idx >= 0 ? OS_LIST[splitLayerIndex(ctx.os, idx).os]?.short : undefined;
+  const osName = ctx.os && idx >= 0 ? `BT${splitLayerIndex(ctx.os, idx).os + 1} ${groupOs(ctx.os, splitLayerIndex(ctx.os, idx).os).short}` : undefined;
   const label = osName ?? layerName(target ?? 0, ctx);
   const layer = ctx.os && idx >= 0 ? `L${splitLayerIndex(ctx.os, idx).layer}` : '';
   if (b.b === 'os_sel') {
@@ -74,7 +74,7 @@ export function describeBinding(b: Binding, ctx: DisplayContext): KeyDisplay {
   if (osd) return osd;
   switch (b.b) {
     case 'kp': {
-      const sc = modsOf(p[0] ?? 0) ? findShortcutFor(b, ctx.shortcuts, ctx.os && ctx.current !== undefined ? OS_LIST[splitLayerIndex(ctx.os, ctx.current).os]?.id : undefined) : undefined;
+      const sc = modsOf(p[0] ?? 0) ? findShortcutFor(b, ctx.shortcuts, ctx.os && ctx.current !== undefined ? groupOs(ctx.os, splitLayerIndex(ctx.os, ctx.current).os).id : undefined) : undefined;
       return {
         main: keycodeLabel(p[0] ?? 0, ctx.host),
         hold: sc?.name,

@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import type { Binding, ComboDef, KeyboardDefinition, Layer, MacroDef, OsLayout, Project, SensorBinding, ShortcutDef } from '../model/types';
+import type { Binding, ComboDef, KeyboardDefinition, Layer, MacroDef, OsId, OsLayout, Project, RuntimeLayout, SensorBinding, ShortcutDef } from '../model/types';
 import { createProject, emptyLayer, newId, nextLayerId, projectFromKeymapFile, defaultLayers, migrateProject, osLayersFromKeymap } from '../model/project';
-import { absLayer, defaultOsLayout, inferOsDefaults, relocateBinding, retargetOsKeys, splitLayerIndex } from '../model/os';
+import { absLayer, defaultOsLayout, inferOsDefaults, osInfo, relocateBinding, retargetOsKeys, splitLayerIndex } from '../model/os';
 import { resolveShortcut, shortcutBehaviors } from '../model/shortcuts';
 import { bindingsEqual } from '../zmk/keymap';
+import { comboSlotOf, encoderPosition, isGlobalPosition, macroSlotOf, readCombos, writeCombo, writeMacroSteps } from '../model/runtime';
 import * as db from '../storage/db';
 import { KEYBOARDS, getKeyboard } from '../keyboards';
 import { behaviorRegistry, macroBehavior, parseKeymap } from '../zmk/keymap';
@@ -22,14 +23,19 @@ export interface Settings {
 const DEFAULT_SETTINGS: Settings = { theme: 'dark', hostLayout: 'jis', confirmApply: true, showSimulator: false };
 
 /** 履歴 (Undo / Redo) の対象になるプロジェクトの内容 */
-type Snapshot = Pick<Project, 'layers' | 'macros' | 'shortcuts' | 'combos' | 'os'>;
+type Snapshot = Pick<Project, 'layers' | 'macros' | 'shortcuts' | 'combos' | 'os' | 'runtimeNames'>;
 
 export interface HistoryEntry extends Snapshot {
   label: string;
   time: number;
 }
 
-const snapshot = (p: Project): Snapshot => ({ layers: p.layers, macros: p.macros, shortcuts: p.shortcuts, combos: p.combos, os: p.os });
+const snapshot = (p: Project): Snapshot => ({ layers: p.layers, macros: p.macros, shortcuts: p.shortcuts, combos: p.combos, os: p.os, runtimeNames: p.runtimeNames });
+
+const runtimeNamesOf = (p: Project, rt: RuntimeLayout) => ({
+  macros: Array.from({ length: rt.macroSlots }, (_, i) => p.runtimeNames?.macros[i] ?? ''),
+  combos: Array.from({ length: rt.comboSlots }, (_, i) => p.runtimeNames?.combos[i] ?? ''),
+});
 
 export type SaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
 
@@ -102,6 +108,8 @@ interface EditorState {
   /** OS を選択 (同じ番号のレイヤーを表示) */
   setOs(osIndex: number): void;
   setOsDefault(osIndex: number, layer: number): void;
+  /** Bluetooth プロファイル (レイヤーグループ) の OS を変更。キーの割り当ては変えない */
+  setGroupOs(groupIndex: number, osId: OsId): void;
   /** OS の全レイヤーを別の OS にコピー */
   copyOs(from: number, to: number): void;
   /** レイヤーの内容を別のレイヤーにコピー (同じ OS 内 / 別の OS) */
@@ -112,6 +120,8 @@ interface EditorState {
   removeCombo(id: string): void;
   /** エンコーダーの割り当て (layerIndices のレイヤーに同じ設定) */
   setSensor(layerIndices: number[], sensorIndex: number, value: SensorBinding): void;
+  /** 即時編集マクロ (スロット) の保存。steps が空なら削除 */
+  saveRuntimeMacro(slot: number, name: string, steps: Binding[]): void;
   removeMacro(label: string): void;
   replaceDevice(device: Project['device']): void;
 }
@@ -365,8 +375,10 @@ export const useEditor = create<EditorState>((set, get) => {
       set((s) => ({ layerIndex: Math.max(0, Math.min(s.layerIndex, s.project!.layers.length - 1)) }));
     },
     clearLayer(index) {
+      const rt = get().keyboard.runtime;
       commit('レイヤーをクリア', (p) => ({
-        layers: p.layers.map((l, i) => (i === index ? { ...l, bindings: l.bindings.map(() => ({ b: 'trans', p: [] })) } : l)),
+        // マクロ・コンボの設定 (レイヤー 0 だけで使う仮想キー) はそのまま
+        layers: p.layers.map((l, i) => (i === index ? { ...l, bindings: l.bindings.map((b, pos) => (rt && isGlobalPosition(rt, pos) ? b : { b: 'trans', p: [] })) } : l)),
       }));
     },
     resetToDefault() {
@@ -463,8 +475,24 @@ export const useEditor = create<EditorState>((set, get) => {
       const os: OsLayout = { ...project.os, systems: project.os.systems.map((s, i) => (i === osIndex ? { ...s, defaultLayer: layer } : s)) };
       commit(`${project.os.systems[osIndex].id} のデフォルトレイヤーを Layer ${layer} に変更`, (p) => ({ os, layers: retargetOsKeys(p.layers, project.os!, os) }));
     },
+    setGroupOs(groupIndex, osId) {
+      const { project } = get();
+      if (!project?.os || project.os.systems[groupIndex]?.id === osId) return;
+      const before = osInfo(project.os.systems[groupIndex].id);
+      const after = osInfo(osId);
+      const os: OsLayout = { ...project.os, systems: project.os.systems.map((s, i) => (i === groupIndex ? { ...s, id: osId } : s)) };
+      commit(`Bluetooth ${groupIndex + 1} の OS を ${after.name} に変更`, (p) => ({
+        os,
+        // 既定の名前 (例: "Win 2") のレイヤーだけ、新しい OS の名前に付け替える
+        layers: p.layers.map((l, i) => {
+          const s = splitLayerIndex(os, i);
+          return s.os === groupIndex && l.name === `${before.short} ${s.layer}` ? { ...l, name: `${after.short} ${s.layer}` } : l;
+        }),
+      }));
+    },
     copyOs(from, to) {
       const { project } = get();
+      const rt = get().keyboard.runtime;
       if (!project?.os || from === to) return;
       const os = project.os;
       const reg = registryFor(project);
@@ -475,7 +503,7 @@ export const useEditor = create<EditorState>((set, get) => {
           const src = p.layers[absLayer(os, from, s.layer)];
           return {
             ...l,
-            bindings: src.bindings.map((b) => relocateBinding(b, reg.get(b.b), os, from, to)),
+            bindings: src.bindings.map((b, pos) => (rt && isGlobalPosition(rt, pos) ? l.bindings[pos] : relocateBinding(b, reg.get(b.b), os, from, to))),
             sensors: src.sensors?.map((x) => ({ cw: { ...x.cw }, ccw: { ...x.ccw } })),
           };
         }),
@@ -484,6 +512,7 @@ export const useEditor = create<EditorState>((set, get) => {
     },
     copyLayer(from, to) {
       const { project } = get();
+      const rt = get().keyboard.runtime;
       if (!project || from === to) return;
       const reg = registryFor(project);
       const os = project.os;
@@ -495,7 +524,7 @@ export const useEditor = create<EditorState>((set, get) => {
             ? l
             : {
                 ...l,
-                bindings: p.layers[from].bindings.map((b) => (os ? relocateBinding(b, reg.get(b.b), os, fromOs, toOs) : b)),
+                bindings: p.layers[from].bindings.map((b, pos) => (rt && isGlobalPosition(rt, pos) ? l.bindings[pos] : os ? relocateBinding(b, reg.get(b.b), os, fromOs, toOs) : b)),
                 sensors: p.layers[from].sensors?.map((x) => ({ cw: { ...x.cw }, ccw: { ...x.ccw } })),
               },
         ),
@@ -529,23 +558,87 @@ export const useEditor = create<EditorState>((set, get) => {
       }));
     },
     saveCombo(c) {
-      const { project } = get();
+      const { project, keyboard } = get();
       if (!project) return;
-      const list = project.combos ?? [];
-      const exists = list.some((x) => x.id === c.id);
-      commit(exists ? `コンボ「${c.name}」を編集` : `コンボ「${c.name}」を追加`, () => ({ combos: exists ? list.map((x) => (x.id === c.id ? c : x)) : [...list, c] }));
+      const rt = keyboard.runtime;
+      if (!rt) {
+        const list = project.combos ?? [];
+        const exists = list.some((x) => x.id === c.id);
+        commit(exists ? `コンボ「${c.name}」を編集` : `コンボ「${c.name}」を追加`, () => ({ combos: exists ? list.map((x) => (x.id === c.id ? c : x)) : [...list, c] }));
+        return;
+      }
+      // 即時編集: コンボはレイヤー 0 の仮想キー (設定 + 動作) に書き込む
+      const used = new Set(readCombos(project, rt).map((x) => comboSlotOf(x.id)));
+      let slot = comboSlotOf(c.id);
+      const exists = slot >= 0 && used.has(slot);
+      if (slot < 0) slot = Array.from({ length: rt.comboSlots }, (_, i) => i).find((i) => !used.has(i)) ?? -1;
+      if (slot < 0) {
+        get().toast('error', `コンボは ${rt.comboSlots} 個までです`);
+        return;
+      }
+      let layers: Layer[];
+      try {
+        layers = writeCombo(project.layers, rt, slot, c);
+      } catch (e) {
+        get().toast('error', (e as Error).message);
+        return;
+      }
+      const names = runtimeNamesOf(project, rt);
+      names.combos[slot] = c.name;
+      commit(exists ? `コンボ「${c.name}」を編集` : `コンボ「${c.name}」を追加`, () => ({ layers, runtimeNames: names }));
     },
     removeCombo(id) {
-      const { project } = get();
-      const c = project?.combos?.find((x) => x.id === id);
-      if (!c) return;
-      commit(`コンボ「${c.name}」を削除`, (p) => ({ combos: (p.combos ?? []).filter((x) => x.id !== id) }));
+      const { project, keyboard } = get();
+      if (!project) return;
+      const rt = keyboard.runtime;
+      if (!rt) {
+        const c = project.combos?.find((x) => x.id === id);
+        if (!c) return;
+        commit(`コンボ「${c.name}」を削除`, (p) => ({ combos: (p.combos ?? []).filter((x) => x.id !== id) }));
+        return;
+      }
+      const slot = comboSlotOf(id);
+      if (slot < 0) return;
+      const names = runtimeNamesOf(project, rt);
+      const name = names.combos[slot] || `combo_${slot + 1}`;
+      names.combos[slot] = '';
+      commit(`コンボ「${name}」を削除`, (p) => ({ layers: writeCombo(p.layers, rt, slot, null), runtimeNames: names }));
+    },
+    saveRuntimeMacro(slot, name, steps) {
+      const { project, keyboard } = get();
+      const rt = keyboard.runtime;
+      if (!project || !rt) return;
+      let layers: Layer[];
+      try {
+        layers = writeMacroSteps(project.layers, rt, slot, steps);
+      } catch (e) {
+        get().toast('error', (e as Error).message);
+        return;
+      }
+      const names = runtimeNamesOf(project, rt);
+      names.macros[slot] = name;
+      commit(steps.length ? `マクロ「${name}」を保存` : `マクロ「${name}」を削除`, () => ({ layers, runtimeNames: names }));
     },
     setSensor(layerIndices, sensorIndex, value) {
       const { project, keyboard } = get();
       if (!project) return;
+      const rt = keyboard.runtime;
+      const label = layerIndices.length > 1 ? `エンコーダーの設定を ${layerIndices.length} レイヤーに適用` : 'エンコーダーの設定を変更';
+      if (rt) {
+        // 即時編集: エンコーダーの仮想キーに書き込む (ZMK Studio で反映できる)
+        commit(label, (p) => ({
+          layers: p.layers.map((l, i) => {
+            if (!layerIndices.includes(i)) return l;
+            const bindings = [...l.bindings];
+            bindings[encoderPosition(rt, sensorIndex, 'cw')] = { ...value.cw, p: [...value.cw.p] };
+            bindings[encoderPosition(rt, sensorIndex, 'ccw')] = { ...value.ccw, p: [...value.ccw.p] };
+            return { ...l, bindings };
+          }),
+        }));
+        return;
+      }
       const count = Math.max(sensorIndex + 1, ...(keyboard.encoders ?? []).map((e) => e.sensorIndex + 1));
-      commit(layerIndices.length > 1 ? `エンコーダーの設定を ${layerIndices.length} レイヤーに適用` : 'エンコーダーの設定を変更', (p) => ({
+      commit(label, (p) => ({
         layers: p.layers.map((l, i) => {
           if (!layerIndices.includes(i)) return l;
           const sensors: SensorBinding[] = Array.from({ length: count }, (_, k) => l.sensors?.[k] ?? { cw: { b: 'trans', p: [] }, ccw: { b: 'trans', p: [] } });
@@ -587,7 +680,18 @@ export function customBehaviorsFor(source: string): BehaviorDef[] {
 
 export function registryFor(project: Project | null, extra: BehaviorDef[] = []): Map<string, BehaviorDef> {
   if (!project) return behaviorRegistry(extra);
-  return behaviorRegistry([...customBehaviorsFor(project.keymapSource), ...project.macros.map(macroBehavior), ...shortcutBehaviors(project.shortcuts), ...extra]);
+  const reg = behaviorRegistry([...customBehaviorsFor(project.keymapSource), ...project.macros.map(macroBehavior), ...shortcutBehaviors(project.shortcuts), ...extra]);
+  const rt = getKeyboard(project.keyboardId).runtime;
+  if (rt) {
+    // 即時編集マクロ (&rtm0〜) はプロジェクトで付けた名前で表示
+    for (const [label, def] of reg) {
+      const slot = macroSlotOf(rt, label);
+      if (slot >= 0) reg.set(label, { ...def, nameJa: project.runtimeNames?.macros[slot] || `マクロ ${slot + 1}`, description: '即時編集マクロ (中身は「マクロ」タブで編集し、キーボードに直接書き込めます)' });
+      if (label === rt.comboBehavior) reg.set(label, { ...def, nameJa: 'コンボ設定 (内部用)', description: 'コンボの設定を保持する内部用のビヘイビア' });
+      if (label === 'vkey') reg.set(label, { ...def, nameJa: '仮想キー (内部用)', description: '仮想キー位置の割り当てを押す内部用のビヘイビア' });
+    }
+  }
+  return reg;
 }
 
 export function scrollValFor(source: string): number {

@@ -1,0 +1,22 @@
+# Choco Factory runtime configuration (ZMK v0.2.1)
+
+DT_COMPAT_CHOCO_BEHAVIOR_VKEY := zmk,behavior-choco-vkey
+DT_COMPAT_CHOCO_RUNTIME_COMBO := zmk,behavior-choco-runtime-combos
+
+config CHOCO_BEHAVIOR_VKEY
+    bool "Virtual key behavior (press the binding at a virtual key position)"
+    default $(dt_compat_enabled,$(DT_COMPAT_CHOCO_BEHAVIOR_VKEY))
+
+config CHOCO_RUNTIME_COMBO
+    bool "Combos configured from keymap bindings (editable with ZMK Studio)"
+    default $(dt_compat_enabled,$(DT_COMPAT_CHOCO_RUNTIME_COMBO))
+
+config CHOCO_RUNTIME_COMBO_MAX_PENDING
+    int "Max keys captured while a combo is being detected"
+    default 4
+    depends on CHOCO_RUNTIME_COMBO
+
+config CHOCO_RUNTIME_COMBO_MAX_ACTIVE
+    int "Max combos held at the same time"
+    default 4
+    depends on CHOCO_RUNTIME_COMBO

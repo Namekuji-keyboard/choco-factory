@@ -92,6 +92,29 @@ export interface EncoderLayout {
   name: string;
 }
 
+/**
+ * 即時編集用の仮想キー位置 (Choco Factory のファームウェアモジュール)。
+ * 物理キーの後ろに並ぶキー位置で、ZMK Studio で通常のキーと同じく書き込み・保存できる。
+ */
+export interface RuntimeLayout {
+  /** エンコーダー: センサー s の時計回り = encoderBase + s*2、反時計回り = +1 */
+  encoderBase: number;
+  macroBase: number;
+  macroSlots: number;
+  macroSteps: number;
+  comboConfigBase: number;
+  comboOutputBase: number;
+  comboSlots: number;
+  /** コンボ設定のレイヤーグループの大きさ (= OS ごとのレイヤー数) */
+  layersPerGroup: number;
+  /** 1 レイヤーのバインディング数 (物理キー + 仮想キー) */
+  total: number;
+  /** 設定ビヘイビアのラベル */
+  comboBehavior: string;
+  /** マクロスロットのビヘイビアのラベル (rtm0, rtm1, ...) */
+  macroBehaviorPrefix: string;
+}
+
 export interface KeyboardDefinition {
   id: string;
   name: string;
@@ -111,8 +134,11 @@ export interface KeyboardDefinition {
   /** studio_unlock の場所の説明 */
   unlockHint?: string;
   /** ZIP 出力に含めるファイル (zmk-config 内の相対パス → 内容) */
-  files: { original: Record<string, string>; studio: Record<string, string> };
+  /** original = ZMK Studio 無効版、studio = Studio 対応版、pristine = 元のリポジトリのまま */
+  files: { original: Record<string, string>; studio: Record<string, string>; pristine?: Record<string, string> };
   keymapPath: string;
+  /** 即時編集用の仮想キー位置 (対応ファームウェアのみ) */
+  runtime?: RuntimeLayout;
 }
 
 /** マクロ (ファイル出力専用。ZMK Studio はマクロの作成に未対応) */
@@ -143,6 +169,8 @@ export interface Project {
   os?: OsLayout;
   shortcuts?: ShortcutDef[];
   combos?: ComboDef[];
+  /** 即時編集のマクロ・コンボの名前 (キーボードには保存されないのでアプリ側で保持) */
+  runtimeNames?: { macros: string[]; combos: string[] };
   /** 旧形式から移行したときに OS 別の構成に入りきらなかったレイヤー (失わないよう保存) */
   legacyLayers?: Layer[];
   /** 最後に同期したデバイス */

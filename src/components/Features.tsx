@@ -11,11 +11,12 @@ import type { Binding, ComboDef, OsId, SensorBinding, ShortcutDef } from '../mod
 import { KEYCODES, MODIFIER_KEYCODES, keycodeLabel, keycodeSearchText, preferredName } from '../zmk/keycodes';
 import { keycodeDescriptionJa } from '../zmk/keycodes.ja';
 import { newId } from '../model/project';
-import { OS_LIST, absLayer, osInfo, splitLayerIndex } from '../model/os';
+import { OS_LIST, absLayer, groupName, groupOs, osInfo, splitLayerIndex } from '../model/os';
 import { MAX_NORMAL_KEYS, SHORTCUT_PRESETS, presetKeys, resolveShortcut, shortcutText } from '../model/shortcuts';
 import { ENCODER_ACTIONS, ENCODER_ALLOWED_BEHAVIORS, ENCODER_PAIRS, encoderAction } from '../model/encoders';
 import { behaviorRegistry, bindingsEqual, evaluateParamText, formatBinding } from '../zmk/keymap';
 import { describeBinding, describeSensorAction, type DisplayContext } from '../lib/display';
+import { readCombos, readEncoder, readMacros, type RuntimeMacro } from '../model/runtime';
 
 // ---------------------------------------------------------------------------
 // キーの組み合わせの編集 (追加・削除・並べ替え。個数の制限なし)
@@ -124,7 +125,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   const assign = useEditor((s) => s.assign);
   const toast = useEditor((s) => s.toast);
   const host = useEditor((s) => s.settings.hostLayout);
-  const curOs: OsId = project?.os ? OS_LIST[splitLayerIndex(project.os, layerIndex).os].id : 'windows';
+  const curOs: OsId = project?.os ? groupOs(project.os, splitLayerIndex(project.os, layerIndex).os).id : 'windows';
   const [filterOs, setFilterOs] = useState<OsId | 'all-list'>(curOs);
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState<ShortcutDef | null>(null);
@@ -433,7 +434,8 @@ export function CombosDialog({ onClose }: { onClose: () => void }) {
   const ctx = useDisplayCtx();
   const [editing, setEditing] = useState<ComboDef | null>(null);
   if (!project || !ctx) return null;
-  const combos = project.combos ?? [];
+  const rt = kb.runtime;
+  const combos = rt ? readCombos(project, rt) : (project.combos ?? []);
   const os = project.os;
   const curOs = os ? splitLayerIndex(os, layerIndex).os : 0;
   const osLayers = os ? Array.from({ length: os.layersPerOs }, (_, j) => project.layers[absLayer(os, curOs, j)].id) : [];
@@ -450,7 +452,7 @@ export function CombosDialog({ onClose }: { onClose: () => void }) {
     if (i < 0) return `?${id}`;
     if (!os) return project.layers[i].name;
     const s = splitLayerIndex(os, i);
-    return `${OS_LIST[s.os].short} L${s.layer}`;
+    return `BT${s.os + 1} L${s.layer}`;
   };
 
   const validate = (c: ComboDef): string | null => {
@@ -467,7 +469,10 @@ export function CombosDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="コンボ (同時押し)" wide>
       <p className="mb-3 rounded-lg bg-surface-2 p-2.5 text-xs text-muted">
-        複数のキーを同時に押したときに、別のキー入力やショートカットを送ります。ZMK Studio はコンボの編集に対応していないため、「ファイル」→ ZIP 出力でファームウェアをビルドして反映します。
+        複数のキーを同時に押したときに、別のキー入力やショートカットを送ります。
+        {rt
+          ? ` 追加・編集・削除は「キーボードに適用」でキーボードに直接書き込まれ、すぐに反映されます (UF2 の書き込みは不要。最大 ${rt.comboSlots} 個・1 つのコンボのキーは 4 個まで)。`
+          : ' ZMK Studio はコンボの編集に対応していないため、「ファイル」→ ZIP 出力でファームウェアをビルドして反映します。'}
       </p>
       {editing ? (
         <ComboEditor
@@ -476,7 +481,7 @@ export function CombosDialog({ onClose }: { onClose: () => void }) {
           kb={kb}
           scopes={{ all: [], os: osLayers, layer: [project.layers[layerIndex].id] }}
           scopeOf={scopeOf}
-          osName={os ? OS_LIST[curOs].name : ''}
+          osName={os ? groupName(os, curOs) : ''}
           layerName={describeLayer(project.layers[layerIndex].id)}
           validate={validate}
           onCancel={() => setEditing(null)}
@@ -633,13 +638,14 @@ export function EncoderDialog({ sensorIndex, onClose }: { sensorIndex: number; o
   const ctx = useDisplayCtx();
   const enc = kb.encoders?.find((e) => e.sensorIndex === sensorIndex);
   const layer = project?.layers[layerIndex];
-  const cur: SensorBinding = layer?.sensors?.[sensorIndex] ?? { cw: TRANS, ccw: TRANS };
+  const rtLayout = kb.runtime;
+  const cur: SensorBinding = layer ? (rtLayout ? readEncoder(layer, rtLayout, sensorIndex) : (layer.sensors?.[sensorIndex] ?? { cw: TRANS, ccw: TRANS })) : { cw: TRANS, ccw: TRANS };
   const [value, setValue] = useState<SensorBinding>(cur);
   const [scope, setScope] = useState<'layer' | 'os' | 'all'>('layer');
   if (!project || !layer || !enc || !ctx) return null;
   const os = project.os;
   const s = os ? splitLayerIndex(os, layerIndex) : { os: 0, layer: layerIndex };
-  const osId: OsId = os ? OS_LIST[s.os].id : 'windows';
+  const osId: OsId = os ? groupOs(os, s.os).id : 'windows';
   const sv = scrollValFor(project.keymapSource);
   const presetBinding = (id: string) => encoderAction(id)!.binding(osId, host, sv);
   const matchPreset = (b: Binding) => ENCODER_ACTIONS.find((a) => bindingsEqual(a.binding(osId, host, sv), b))?.id;
@@ -656,13 +662,13 @@ export function EncoderDialog({ sensorIndex, onClose }: { sensorIndex: number; o
     <Modal
       open
       onClose={onClose}
-      title={`${enc.name} — ${os ? `${OS_LIST[s.os].name} / Layer ${s.layer}` : layer.name}`}
+      title={`${enc.name} — ${os ? `${groupName(os, s.os)} / Layer ${s.layer}` : layer.name}`}
       wide
       footer={
         <>
           <select className="input mr-auto w-auto" value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}>
             <option value="layer">このレイヤーだけに設定</option>
-            {os && <option value="os">{OS_LIST[s.os].name} の全レイヤー (5) に設定</option>}
+            {os && <option value="os">{groupName(os, s.os)} の全レイヤー (5) に設定</option>}
             <option value="all">すべての OS・レイヤー ({project.layers.length}) に設定</option>
           </select>
           <button className="btn-ghost" onClick={onClose}>
@@ -673,7 +679,7 @@ export function EncoderDialog({ sensorIndex, onClose }: { sensorIndex: number; o
             onClick={() => {
               const t = targets();
               setSensor(t, sensorIndex, value);
-              toast('success', `${enc.name} の設定を ${t.length} レイヤーに保存しました (反映にはファームウェアのビルドが必要です)`);
+              toast('success', rtLayout ? `${enc.name} の設定を ${t.length} レイヤーに保存しました。「キーボードに適用」で即時に反映されます` : `${enc.name} の設定を ${t.length} レイヤーに保存しました (反映にはファームウェアのビルドが必要です)`);
               onClose();
             }}
           >
@@ -682,9 +688,15 @@ export function EncoderDialog({ sensorIndex, onClose }: { sensorIndex: number; o
         </>
       }
     >
-      <p className="mb-3 rounded-lg bg-warn/10 p-2.5 text-xs text-warn">
-        ZMK Studio はエンコーダーの割り当て (sensor-bindings) の書き込みに対応していません。保存した設定は「ファイル」→「ZMK 設定一式 (ZIP)」に含まれ、ファームウェアをビルドして書き込むと反映されます。
-      </p>
+      {rtLayout ? (
+        <p className="mb-3 rounded-lg bg-ok/10 p-2.5 text-xs text-ok">
+          保存した設定は「キーボードに適用」でキーボードに直接書き込まれ、すぐに反映されます (UF2 の書き込みは不要)。時計回り・反時計回りはそれぞれ「透過」にでき、透過にすると下のレイヤーの設定が使われます。
+        </p>
+      ) : (
+        <p className="mb-3 rounded-lg bg-warn/10 p-2.5 text-xs text-warn">
+          ZMK Studio はエンコーダーの割り当て (sensor-bindings) の書き込みに対応していません。保存した設定は「ファイル」→「ZMK 設定一式 (ZIP)」に含まれ、ファームウェアをビルドして書き込むと反映されます。
+        </p>
+      )}
       <div className="mb-3">
         <div className="label">よく使う組み合わせ</div>
         <div className="flex flex-wrap gap-1">
@@ -706,7 +718,8 @@ export function EncoderDialog({ sensorIndex, onClose }: { sensorIndex: number; o
             allow={allowEncoder}
             onPick={(v, nb) => {
               // 透過は両方向まとめてのみ有効 (ZMK の仕様)
-              if (v === '__trans') setValue({ cw: TRANS, ccw: TRANS });
+              if (rtLayout) setValue({ ...value, [dir]: nb });
+              else if (v === '__trans') setValue({ cw: TRANS, ccw: TRANS });
               else setValue({ ...value, [dir]: nb, ...(transBoth ? { [dir === 'cw' ? 'ccw' : 'cw']: NONE } : {}) });
             }}
             presetBinding={presetBinding}
@@ -717,8 +730,9 @@ export function EncoderDialog({ sensorIndex, onClose }: { sensorIndex: number; o
         <span className="font-semibold text-fg">押し込み: 設定できません。</span> Choco-Key のキーマトリクス (5 行 × 11 列、42 キー) にはエンコーダーの押し込みスイッチが割り当てられていないため、ファームウェアからは押し込みを検出できません (Choco-Key.dtsi の matrix transform で確認)。
       </div>
       <p className="mt-2 text-[11px] text-muted">
-        回転方向は ZMK の sensor-rotate の 1 番目 = 時計回りとして出力します。実際の回転方向は配線 (A/B 相) によって逆になる場合があるため、実機で確認してください。
-        「透過」は ZMK の仕様上、両方向まとめてのみ設定できます。また右エンコーダー (センサー 0) を透過にするには、同じレイヤーの左エンコーダー (センサー 1) も透過にする必要があります (そうでない場合は「なし」として出力)。
+        回転方向は ZMK の sensor-rotate の 1 番目 = 時計回りとして扱います。実際の回転方向は配線 (A/B 相) によって逆になる場合があるため、実機で確認してください。
+        {!rtLayout &&
+          '「透過」は ZMK の仕様上、両方向まとめてのみ設定できます。また右エンコーダー (センサー 0) を透過にするには、同じレイヤーの左エンコーダー (センサー 1) も透過にする必要があります (そうでない場合は「なし」として出力)。'}
       </p>
     </Modal>
   );
@@ -760,7 +774,7 @@ function DirEditor({
           onPick(v, v === '__trans' ? TRANS : v === '__none' ? NONE : presetBinding(v));
         }}
       >
-        <option value="__trans">下のレイヤーと同じ (透過・両方向)</option>
+        <option value="__trans">下のレイヤーと同じ (透過)</option>
         <option value="__none">なし</option>
         {groups.map((g) => (
           <optgroup key={g} label={g}>
@@ -779,6 +793,139 @@ function DirEditor({
           <BindingPicker value={b.b === 'trans' || b.b === 'none' ? { b: 'kp', p: [KEYCODES[0].value] } : b} allow={allow} onChange={(nb) => onPick('__custom', nb)} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 即時編集マクロ (6 スロット × 8 ステップ)
+// ---------------------------------------------------------------------------
+
+export function RuntimeMacrosDialog({ initialSlot, onClose }: { initialSlot?: number; onClose: () => void }) {
+  const project = useEditor((s) => s.project);
+  const kb = useEditor((s) => s.keyboard);
+  const selected = useEditor((s) => s.selected);
+  const save = useEditor((s) => s.saveRuntimeMacro);
+  const assign = useEditor((s) => s.assign);
+  const toast = useEditor((s) => s.toast);
+  const ctx = useDisplayCtx();
+  const rt = kb.runtime;
+  const [slot, setSlot] = useState(initialSlot ?? 0);
+  if (!project || !rt || !ctx) return null;
+  const macros = readMacros(project, rt);
+  return (
+    <Modal open onClose={onClose} title="マクロ (即時編集)" wide>
+      <p className="mb-3 rounded-lg bg-surface-2 p-2.5 text-xs text-muted">
+        登録したキー入力を順番に実行します (最大 {rt.macroSteps} ステップ・{rt.macroSlots} 個)。作成・編集・削除は「キーボードに適用」でキーボードに直接書き込まれ、すぐに反映されます (UF2 の書き込みは不要)。
+      </p>
+      <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+        <div className="space-y-1">
+          {macros.map((m) => (
+            <button
+              key={m.slot}
+              className={clsx('w-full rounded-lg border px-2.5 py-2 text-left', slot === m.slot ? 'border-accent bg-accent-soft' : 'border-line hover:bg-surface-2')}
+              onClick={() => setSlot(m.slot)}
+            >
+              <div className="truncate text-sm font-medium">{m.steps.length ? m.name : `(空き) スロット ${m.slot + 1}`}</div>
+              <div className="truncate text-xs text-muted">
+                &amp;rtm{m.slot} ・ {m.steps.length ? `${m.steps.length} ステップ` : '未使用'}
+              </div>
+            </button>
+          ))}
+        </div>
+        <RuntimeMacroEditor
+          key={`${slot}-${macros[slot].steps.length}-${macros[slot].name}`}
+          macro={macros[slot]}
+          maxSteps={rt.macroSteps}
+          ctx={ctx}
+          onSave={(name, steps) => {
+            save(slot, name, steps);
+            toast('success', steps.length ? `マクロ「${name}」を保存しました。「キーボードに適用」で反映されます` : 'マクロを削除しました');
+          }}
+          onAssign={() => {
+            if (!selected.length) return toast('info', '先にキーボード上のキーを選択してください');
+            assign({ b: `${rt.macroBehaviorPrefix}${slot}`, p: [] }, `マクロ「${macros[slot].name}」を割り当て`);
+            toast('success', `マクロを ${selected.length} 個のキーに割り当てました`);
+          }}
+        />
+      </div>
+    </Modal>
+  );
+}
+
+function RuntimeMacroEditor({
+  macro,
+  maxSteps,
+  ctx,
+  onSave,
+  onAssign,
+}: {
+  macro: RuntimeMacro;
+  maxSteps: number;
+  ctx: DisplayContext;
+  onSave: (name: string, steps: Binding[]) => void;
+  onAssign: () => void;
+}) {
+  const [name, setName] = useState(macro.steps.length ? macro.name : `マクロ ${macro.slot + 1}`);
+  const [steps, setSteps] = useState<Binding[]>(macro.steps);
+  const [draft, setDraft] = useState<Binding>({ b: 'kp', p: [KEYCODES.find((k) => k.names.includes('A'))!.value] });
+  const move = (i: number, d: number) => {
+    const j = i + d;
+    if (j < 0 || j >= steps.length) return;
+    const next = [...steps];
+    [next[i], next[j]] = [next[j], next[i]];
+    setSteps(next);
+  };
+  const allowStep = (b: Binding) => (ENCODER_ALLOWED_BEHAVIORS.has(b.b) || /^sc_/.test(b.b) ? null : `&${b.b} はマクロのステップには使えません (押して離すだけの動作のみ)`);
+  return (
+    <div className="min-w-0 space-y-3">
+      <div>
+        <label className="label">マクロ名</label>
+        <input className="input" value={name} maxLength={30} onChange={(e) => setName(e.target.value)} />
+      </div>
+      <div>
+        <label className="label">実行する順番 ({steps.length} / {maxSteps})</label>
+        <ol className="space-y-1">
+          {steps.map((b, i) => (
+            <li key={i} className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-sm">
+              <span className="w-5 text-xs text-muted">{i + 1}</span>
+              <span className="flex-1 truncate font-medium">{describeSensorAction(b, ctx)}</span>
+              <button className="btn-ghost p-1" disabled={i === 0} onClick={() => move(i, -1)} aria-label="上へ">
+                <ArrowUp size={13} />
+              </button>
+              <button className="btn-ghost p-1" disabled={i === steps.length - 1} onClick={() => move(i, 1)} aria-label="下へ">
+                <ArrowDown size={13} />
+              </button>
+              <button className="btn-ghost p-1 text-danger" onClick={() => setSteps(steps.filter((_, j) => j !== i))} aria-label="削除">
+                <X size={13} />
+              </button>
+            </li>
+          ))}
+          {!steps.length && <li className="text-xs text-muted">ステップがありません。下から追加してください。</li>}
+        </ol>
+      </div>
+      {steps.length < maxSteps && (
+        <div className="rounded-lg border border-dashed border-line p-3">
+          <div className="label">追加するキー入力</div>
+          <BindingPicker value={draft} allow={allowStep} onChange={setDraft} />
+          <button className="btn-outline mt-2" onClick={() => setSteps([...steps, draft])}>
+            <Plus size={14} /> 「{describeSensorAction(draft, ctx)}」を追加
+          </button>
+        </div>
+      )}
+      <div className="flex flex-wrap justify-end gap-2">
+        {macro.steps.length > 0 && (
+          <button className="btn-ghost text-danger" onClick={() => confirm('このマクロを削除しますか？割り当て済みのキーは何もしなくなります。') && onSave('', [])}>
+            <Trash2 size={14} /> 削除
+          </button>
+        )}
+        <button className="btn-outline" onClick={onAssign} disabled={!macro.steps.length}>
+          選択中のキーに割り当て
+        </button>
+        <button className="btn-primary" disabled={!steps.length || !name.trim()} onClick={() => onSave(name.trim(), steps)}>
+          保存
+        </button>
+      </div>
     </div>
   );
 }

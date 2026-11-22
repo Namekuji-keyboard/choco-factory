@@ -7,7 +7,8 @@ import { createProject, migrateProject } from '../model/project';
 import { OS_LIST, absLayer, defaultOsLayout, osDefaultIndex } from '../model/os';
 import { SHORTCUT_PRESETS, presetKeys, resolveShortcut } from '../model/shortcuts';
 import { ENCODER_ACTIONS } from '../model/encoders';
-import { formatBinding, layersFromParsed, parseKeymap, behaviorRegistry, sensorsEqual } from '../zmk/keymap';
+import { formatBinding, layersFromParsed, parseKeymap, behaviorRegistry } from '../zmk/keymap';
+import { readCombos } from '../model/runtime';
 import { keycodeByName } from '../zmk/keycodes';
 import { getProject, putProject } from '../storage/db';
 import type { Project, ShortcutDef } from '../model/types';
@@ -118,16 +119,18 @@ describe('OS 別キーマップ (5 OS × 5 レイヤー = 25 レイヤー)', () 
 
   it('旧形式 (5 レイヤー) のプロジェクトを移行できる', () => {
     const base = createProject(chocoKey, 'old');
-    const legacy: Project = { ...base, schema: undefined, os: undefined, shortcuts: undefined, combos: undefined, layers: layersFromParsed(parseKeymap(chocoKey.files.original[chocoKey.keymapPath])) };
+    const legacy: Project = { ...base, schema: undefined, os: undefined, shortcuts: undefined, combos: undefined, layers: layersFromParsed(parseKeymap(chocoKey.files.pristine![chocoKey.keymapPath])) };
     legacy.layers[0].bindings[0] = { b: 'kp', p: [K('X')] };
     const m = migrateProject(legacy, chocoKey);
     expect(m.layers).toHaveLength(25);
-    expect(m.schema).toBe(2);
+    expect(m.schema).toBe(3);
     // 旧データの内容が各 OS にコピーされる
     for (let o = 0; o < 5; o++) expect(m.layers[o * 5].bindings[0]).toEqual({ b: 'kp', p: [K('X')] });
     // macOS の Layer 0 の &lt 1 → &lt 6
     expect(m.layers[5].bindings[34].p[0]).toBe(6);
-    expect(m.layers[0].sensors).toHaveLength(2);
+    // エンコーダーは仮想キー 42〜45 に移される
+    expect(m.layers[0].bindings).toHaveLength(126);
+    expect(m.layers[0].bindings[42]).toEqual({ b: 'msc', p: [100] });
   });
 });
 
@@ -189,47 +192,26 @@ describe('ショートカット', () => {
   });
 });
 
-describe('ロータリーエンコーダー', () => {
-  it('時計回り / 反時計回りをレイヤーごとに設定し、sensor-bindings に出力', () => {
+describe('ロータリーエンコーダー (即時編集)', () => {
+  it('時計回り / 反時計回りをレイヤーごとに仮想キーに設定し、キーマップに出力', () => {
     const os = ed().project!.os!;
-    const volUp = ENCODER_ACTIONS.find((a) => a.id === 'vol_up')!.binding('windows', 'jis', 100);
-    const volDn = ENCODER_ACTIONS.find((a) => a.id === 'vol_dn')!.binding('windows', 'jis', 100);
-    const tabNext = ENCODER_ACTIONS.find((a) => a.id === 'tab_next')!.binding('windows', 'jis', 100);
-    const tabPrev = ENCODER_ACTIONS.find((a) => a.id === 'tab_prev')!.binding('windows', 'jis', 100);
-    const zoomIn = ENCODER_ACTIONS.find((a) => a.id === 'zoom_in')!.binding('macos', 'jis', 100);
-    const zoomOut = ENCODER_ACTIONS.find((a) => a.id === 'zoom_out')!.binding('macos', 'jis', 100);
-    ed().setSensor([absLayer(os, 0, 0)], 0, { cw: volUp, ccw: volDn });
-    ed().setSensor([absLayer(os, 0, 1)], 0, { cw: tabNext, ccw: tabPrev });
-    ed().setSensor([absLayer(os, 1, 1)], 0, { cw: zoomIn, ccw: zoomOut });
+    const act = (id: string, o: 'windows' | 'macos') => ENCODER_ACTIONS.find((a) => a.id === id)!.binding(o, 'jis', 100);
+    ed().setSensor([absLayer(os, 0, 0)], 0, { cw: act('vol_up', 'windows'), ccw: act('vol_dn', 'windows') });
+    ed().setSensor([absLayer(os, 0, 1)], 0, { cw: act('tab_next', 'windows'), ccw: { b: 'trans', p: [] } });
+    ed().setSensor([absLayer(os, 1, 1)], 1, { cw: act('zoom_in', 'macos'), ccw: act('zoom_out', 'macos') });
     const p = ed().project!;
-    expect(fmt(zoomIn)).toBe('&kp LG(KPLS)');
+    expect(fmt(act('zoom_in', 'macos'))).toBe('&kp LG(KPLS)');
+    expect(p.layers[0].bindings[42]).toEqual(act('vol_up', 'windows'));
+    expect(p.layers[1].bindings[42]).toEqual(act('tab_next', 'windows'));
+    expect(p.layers[1].bindings[43]).toEqual({ b: 'trans', p: [] }); // 片方向だけ透過も可
+    expect(p.layers[6].bindings[44]).toEqual(act('zoom_in', 'macos'));
+    expect(p.layers[5].bindings[42]).toEqual({ b: 'msc', p: [100] }); // macOS Layer 0 は元のまま
     const { text, warnings } = buildKeymap(p, chocoKey);
     expect(warnings).toEqual([]);
-    expect(text).toMatch(/bindings = <&kp C_VOL(UME)?_UP>, <&kp C_VOL(UME)?_D(OW)?N>; \/\/ 時計回り, 反時計回り/);
+    // sensor-bindings は固定 (仮想キー経由) のまま
+    expect(text.match(/sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;/g)).toHaveLength(25);
     const again = layersFromParsed(parseKeymap(text));
-    // 25 レイヤーすべてで、設定した内容が独立して復元される
-    again.forEach((l, i) => expect(sensorsEqual(l.sensors, p.layers[i].sensors)).toBe(true));
-    expect(again[0].sensors![0].cw).toEqual(volUp);
-    expect(again[1].sensors![0].cw).toEqual(tabNext);
-    expect(again[6].sensors![0].cw).toEqual(zoomIn);
-    expect(again[5].sensors![0].cw).toEqual({ b: 'msc', p: [100] }); // macOS Layer 0 は元のまま
-    // 透過 (両方向): ZMK v0.2.1 は sensor-bindings に &trans を書けないので、末尾のエンコーダーを省略して表す
-    const T = { b: 'trans', p: [] };
-    ed().setSensor([absLayer(os, 2, 3)], 1, { cw: T, ccw: T });
-    let out = buildKeymap(ed().project!, chocoKey);
-    expect(out.text).not.toContain('&trans>');
-    expect(out.text).toMatch(/sensor-bindings = <&scroll_up_down>;/);
-    // 両方のエンコーダーを透過 → sensor-bindings 自体を出力しない
-    ed().setSensor([absLayer(os, 2, 3)], 0, { cw: T, ccw: T });
-    out = buildKeymap(ed().project!, chocoKey);
-    expect(parseKeymap(out.text).layers[absLayer(os, 2, 3)].sensorBindings).toBeUndefined();
-    expect(out.warnings).toEqual([]);
-    // 先頭だけ透過はできない → 「なし」として出力し、警告
-    ed().setSensor([absLayer(os, 2, 2)], 0, { cw: T, ccw: T });
-    out = buildKeymap(ed().project!, chocoKey);
-    expect(out.warnings.some((w) => w.includes('透過にはできません'))).toBe(true);
-    expect(out.text).toMatch(/bindings = <&none>, <&none>;/);
-    ed().undo();
+    again.forEach((l, i) => expect(l.bindings).toEqual(p.layers[i].bindings));
   });
 
   it('すべてのプリセットが全 OS で有効なバインディングを返す', () => {
@@ -242,21 +224,31 @@ describe('ロータリーエンコーダー', () => {
   });
 });
 
-describe('コンボ', () => {
-  it('A + S → Alt + F4 / Z + X → A を出力し、再読み込みできる', () => {
+describe('コンボ (即時編集)', () => {
+  it('A + S → Alt + F4 / Z + X → A をコンボのスロットに書き込み、読み戻せる', () => {
     const os = ed().project!.os!;
     const winLayers = Array.from({ length: 5 }, (_, j) => absLayer(os, 0, j));
-    ed().saveCombo({ id: 'c1', name: 'close_window', positions: [10, 11], binding: { b: 'kp', p: [(0x04 << 24 | K('F4')) >>> 0] }, layers: winLayers, timeoutMs: 50 });
-    ed().saveCombo({ id: 'c2', name: 'zx_a', positions: [20, 21], binding: { b: 'kp', p: [K('A')] }, layers: [], timeoutMs: 40 });
-    const { text } = buildKeymap(ed().project!, chocoKey);
-    expect(text).toContain('key-positions = <10 11>;');
-    expect(text).toContain('bindings = <&kp LA(F4)>;');
-    expect(text).toContain('layers = <0 1 2 3 4>;');
-    const parsed = parseKeymap(text);
-    expect(parsed.combos.map((c) => [c.name, c.positions, c.layers, c.timeoutMs])).toEqual([
-      ['close_window', [10, 11], [0, 1, 2, 3, 4], 50],
-      ['zx_a', [20, 21], [], 40],
+    ed().saveCombo({ id: 'new-1', name: 'close_window', positions: [10, 11], binding: { b: 'kp', p: [(0x04 << 24 | K('F4')) >>> 0] }, layers: winLayers, timeoutMs: 50 });
+    ed().saveCombo({ id: 'new-2', name: 'zx_a', positions: [20, 21], binding: { b: 'kp', p: [K('A')] }, layers: [], timeoutMs: 40 });
+    const p = ed().project!;
+    const combos = readCombos(p, chocoKey.runtime!);
+    expect(combos.map((c) => [c.id, c.name, c.positions, c.layers, c.timeoutMs])).toEqual([
+      ['slot-0', 'close_window', [10, 11], [0, 1, 2, 3, 4], 50],
+      ['slot-1', 'zx_a', [20, 21], [], 40],
     ]);
+    expect(p.layers[0].bindings[94].b).toBe('rt_combo');
+    expect(p.layers[0].bindings[110]).toEqual({ b: 'kp', p: [(0x04 << 24 | K('F4')) >>> 0] });
+    // ファイルに出力して読み直しても同じ
+    const again = layersFromParsed(parseKeymap(buildKeymap(p, chocoKey).text));
+    expect(readCombos({ layers: again, runtimeNames: p.runtimeNames }, chocoKey.runtime!).map((c) => c.positions)).toEqual([[10, 11], [20, 21]]);
+    // 編集・削除
+    ed().saveCombo({ ...combos[1], positions: [20, 21, 22] });
+    expect(readCombos(ed().project!, chocoKey.runtime!)[1].positions).toEqual([20, 21, 22]);
+    ed().removeCombo('slot-1');
+    expect(readCombos(ed().project!, chocoKey.runtime!)).toHaveLength(1);
+    expect(ed().project!.layers[0].bindings[95]).toEqual({ b: 'none', p: [] });
+    ed().undo();
+    expect(readCombos(ed().project!, chocoKey.runtime!)).toHaveLength(2);
   });
 });
 

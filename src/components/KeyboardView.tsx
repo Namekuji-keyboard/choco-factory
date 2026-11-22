@@ -5,6 +5,9 @@ import { useEditor, scrollValFor } from '../state/editor';
 import { useDevice, useRegistry } from '../state/device';
 import { describeBinding, describeSensorAction, TONE_CLASSES, type DisplayContext } from '../lib/display';
 import { bindingsEqual } from '../zmk/keymap';
+import { bindingOsProblems } from '../zmk/keycodes.os';
+import { groupOs, splitLayerIndex } from '../model/os';
+import { encoderPosition, readEncoder } from '../model/runtime';
 import type { KeyLayout } from '../model/types';
 
 const GAP = 0.08; // キー同士の隙間 (1u に対する割合)
@@ -52,6 +55,7 @@ export function KeyboardView({ onEncoder }: { onEncoder?: (sensorIndex: number) 
     [registry, project, host, layerIndex],
   );
 
+  const groupOsId = project?.os ? groupOs(project.os, splitLayerIndex(project.os, layerIndex).os).id : undefined;
   if (!project || !layer) return null;
   const devLayer = deviceLayers?.[layerIndex];
   const centralSide = kb.central;
@@ -89,6 +93,7 @@ export function KeyboardView({ onEncoder }: { onEncoder?: (sensorIndex: number) 
             if (!b) return null;
             const d = describeBinding(b, ctx);
             const changed = devLayer ? !devLayer.bindings[pos] || !bindingsEqual(b, devLayer.bindings[pos]) : false;
+            const osBad = groupOsId ? bindingOsProblems(b, groupOsId, registry, host) : [];
             return (
               <Keycap
                 key={pos}
@@ -101,12 +106,18 @@ export function KeyboardView({ onEncoder }: { onEncoder?: (sensorIndex: number) 
                 hold={d.hold}
                 tag={d.tag}
                 tone={TONE_CLASSES[d.tone]}
-                title={`#${pos + 1} ${d.title}${changed ? '\n(キーボードに未適用)' : ''}`}
+                title={`#${pos + 1} ${d.title}${changed ? '\n(キーボードに未適用)' : ''}${osBad.length ? `\n⚠ ${osBad.join('・')} はこの OS では動作しません` : ''}`}
+                warn={osBad.length > 0}
               />
             );
           })}
           {kb.encoders?.map((enc) => {
-            const sb = layer.sensors?.[enc.sensorIndex];
+            const sb = kb.runtime ? readEncoder(layer, kb.runtime, enc.sensorIndex) : layer.sensors?.[enc.sensorIndex];
+            const encChanged =
+              !!kb.runtime && !!devLayer && (['cw', 'ccw'] as const).some((d) => {
+                const pos = encoderPosition(kb.runtime!, enc.sensorIndex, d);
+                return !devLayer.bindings[pos] || !bindingsEqual(layer.bindings[pos], devLayer.bindings[pos]);
+              });
             const cw = sb ? describeSensorAction(sb.cw, ctx) : '—';
             const ccw = sb ? describeSensorAction(sb.ccw, ctx) : '—';
             return (
@@ -116,10 +127,11 @@ export function KeyboardView({ onEncoder }: { onEncoder?: (sensorIndex: number) 
                 onClick={() => onEncoder?.(enc.sensorIndex)}
                 className="group absolute flex items-center justify-center rounded-full border border-line bg-surface-2 text-muted shadow-inner transition-colors hover:border-accent"
                 style={{ left: (enc.x - 0.3) * unit, top: (enc.y - 0.3) * unit, width: unit * 0.6, height: unit * 0.6 }}
-                title={`${enc.name}\n時計回り: ${cw}\n反時計回り: ${ccw}\nクリックで設定 (反映にはファームウェアのビルドが必要)`}
+                title={`${enc.name}\n時計回り: ${cw}\n反時計回り: ${ccw}\nクリックで設定${kb.runtime ? '' : ' (反映にはファームウェアのビルドが必要)'}${encChanged ? '\n(キーボードに未適用)' : ''}`}
                 aria-label={`${enc.name}の設定`}
               >
                 <div className="h-[55%] w-[55%] rounded-full border-2 border-dashed border-muted/50 group-hover:border-accent" />
+                {encChanged && <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-warn" />}
                 <span
                   className="pointer-events-none absolute top-full mt-0.5 max-w-[3.2em] truncate text-center leading-tight text-muted"
                   style={{ fontSize: Math.max(8, unit * 0.13), width: unit * 1.2 }}
@@ -146,6 +158,7 @@ function Keycap({
   tag,
   tone,
   title,
+  warn,
 }: {
   k: KeyLayout;
   unit: number;
@@ -157,6 +170,7 @@ function Keycap({
   tag?: string;
   tone: string;
   title: string;
+  warn?: boolean;
 }) {
   const g = unit * GAP;
   const w = k.w * unit - g;
@@ -180,6 +194,7 @@ function Keycap({
         transformOrigin: k.r ? `${((k.rx ?? k.x) - k.x) * unit}px ${((k.ry ?? k.y) - k.y) * unit}px` : undefined,
       }}
     >
+      {warn && <span className="absolute top-[6%] right-[9%] text-[10px] leading-none font-bold text-danger">⚠</span>}
       {tag && (
         <span className="absolute top-[6%] left-[9%] text-[max(8px,0.13em)] leading-none font-semibold text-muted" style={{ fontSize: Math.max(8, unit * 0.13) }}>
           {tag}

@@ -1,0 +1,8 @@
+description: |
+  Virtual key. Pressing it presses the keymap binding at the given (virtual) key position
+  of the currently active layers. Used for rotary encoders and macros whose actions are
+  edited at runtime with ZMK Studio.
+
+compatible: "zmk,behavior-choco-vkey"
+
+include: one_param.yaml

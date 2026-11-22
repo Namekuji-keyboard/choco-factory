@@ -387,23 +387,30 @@ export function formatGrid(cells: string[], kb: Pick<KeyboardDefinition, 'rowSiz
   kb.rowSizes.forEach((size, r) => {
     const row = cells.slice(k, k + size);
     k += size;
+    if (!row.length) return;
     const lc = kb.leftCounts[r] ?? size;
     rows.push({ left: row.slice(0, lc), right: row.slice(lc) });
   });
   if (k < cells.length) rows.push({ left: cells.slice(k), right: [] });
-  const leftW: number[] = [];
-  const rightW: number[] = [];
-  for (const r of rows) {
-    r.left.forEach((c, i) => (leftW[i] = Math.max(leftW[i] ?? 0, c.length)));
-    r.right.forEach((c, i) => {
-      const j = r.right.length - 1 - i; // 右端から揃える
-      rightW[j] = Math.max(rightW[j] ?? 0, c.length);
-    });
-  }
-  const leftTotal = leftW.reduce((a, w) => a + w + 2, 0);
+  // 左右に分かれた行 (物理キー) と分かれていない行 (仮想キーなど) は別々に桁を揃える
+  const groups = [rows.filter((r) => r.right.length), rows.filter((r) => !r.right.length)];
+  const widths = groups.map((g) => {
+    const leftW: number[] = [];
+    const rightW: number[] = [];
+    for (const r of g) {
+      r.left.forEach((c, i) => (leftW[i] = Math.max(leftW[i] ?? 0, c.length)));
+      r.right.forEach((c, i) => {
+        const j = r.right.length - 1 - i; // 右端から揃える
+        rightW[j] = Math.max(rightW[j] ?? 0, c.length);
+      });
+    }
+    return { leftW, rightW, leftTotal: leftW.reduce((a, w) => a + w + 2, 0) };
+  });
   return rows
     .map((r) => {
+      const { leftW, rightW, leftTotal } = widths[r.right.length ? 0 : 1];
       let line = r.left.map((c, i) => c.padEnd(leftW[i] + 2)).join('');
+      if (!r.right.length) return line.trimEnd();
       line = line.padEnd(leftTotal + 2);
       const rightMax = rightW.length;
       // 右手側は右端揃え: 足りない列分のスペースを先頭に入れる

@@ -33,24 +33,23 @@ describe('ZIP 出力', () => {
     const dtsi = await zip.file('zmk-config/config/boards/shields/Choco-Key/Choco-Key.dtsi')!.async('string');
     expect(dtsi).toContain('zmk,physical-layout = &default_layout;');
   });
-  it('元の構成: build.yaml / dtsi は元のまま', async () => {
+  it('Studio 無効版: build.yaml は元のまま、即時編集用のモジュールと仮想キーは含む', async () => {
     const p = createProject(chocoKey, 'test');
     const { blob } = await buildZip(p, chocoKey, 'original');
     const zip = await JSZip.loadAsync(await blob.arrayBuffer());
-    expect(await zip.file('zmk-config/build.yaml')!.async('string')).toBe(chocoKey.files.original['build.yaml']);
-    expect(await zip.file('zmk-config/config/boards/shields/Choco-Key/Choco-Key.dtsi')!.async('string')).toBe(
-      chocoKey.files.original['config/boards/shields/Choco-Key/Choco-Key.dtsi'],
-    );
+    expect(await zip.file('zmk-config/build.yaml')!.async('string')).toBe(chocoKey.files.pristine!['build.yaml']);
+    expect(await zip.file('zmk-config/src/runtime_combo.c')).not.toBeNull();
+    expect(await zip.file('zmk-config/zephyr/module.yml')!.async('string')).toContain('kconfig: Kconfig');
   });
 });
 
 describe('プロジェクト・保存', () => {
   it('元の .keymap をインポートできる / キー数が違うとエラー', () => {
-    const p = projectFromKeymapFile(chocoKey, 'orig', chocoKey.files.original['config/Choco-Key.keymap']);
+    const p = projectFromKeymapFile(chocoKey, 'orig', chocoKey.files.pristine!['config/Choco-Key.keymap']);
     // 5 レイヤーのキーマップは各 OS にコピーされて 25 レイヤーになる
     expect(p.layers).toHaveLength(25);
     expect(p.layers[20].bindings[41]).toEqual({ b: 'lt', p: [24, 0x070029] });
-    const broken = chocoKey.files.original['config/Choco-Key.keymap'].replace('&kp Q ', '');
+    const broken = chocoKey.files.pristine!['config/Choco-Key.keymap'].replace('&kp Q ', '');
     expect(() => projectFromKeymapFile(chocoKey, 'x', broken)).toThrow(/キー数/);
   });
   it('IndexedDB に保存・バックアップ・復元 (同じ ID は上書きしない)', async () => {

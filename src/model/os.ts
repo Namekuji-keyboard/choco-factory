@@ -34,6 +34,14 @@ export function defaultOsLayout(): OsLayout {
 
 export const osInfo = (id: OsId) => OS_LIST.find((o) => o.id === id)!;
 
+/**
+ * レイヤーグループ i は Bluetooth プロファイル i (BT_SEL i。画面上は「Bluetooth i+1」) に対応し、
+ * グループごとに OS を自由に選べる (同じ OS を複数のプロファイルに選んでもよい)。
+ */
+export const groupProfile = (groupIndex: number) => groupIndex;
+export const groupOs = (os: OsLayout, groupIndex: number): OsInfo => osInfo(os.systems[groupIndex]?.id ?? 'windows');
+export const groupName = (os: OsLayout, groupIndex: number) => `Bluetooth ${groupIndex + 1} (${groupOs(os, groupIndex).name})`;
+
 /** ZMK レイヤー番号 → OS とその中のレイヤー番号 */
 export function splitLayerIndex(os: OsLayout, index: number): { os: number; layer: number } {
   return { os: Math.floor(index / os.layersPerOs), layer: index % os.layersPerOs };
@@ -47,10 +55,9 @@ export const osDefaultIndex = (os: OsLayout, osIndex: number) => absLayer(os, os
 /** 表示用のレイヤー名 (現在の OS 内なら "L2"、別の OS なら "Mac L2") */
 export function osLayerLabel(os: OsLayout, index: number, currentIndex?: number): string {
   const { os: o, layer } = splitLayerIndex(os, index);
-  const info = OS_LIST[o];
-  if (!info) return `L${index}?`;
+  if (!os.systems[o]) return `L${index}?`;
   if (currentIndex !== undefined && splitLayerIndex(os, currentIndex).os === o) return `L${layer}`;
-  return `${info.short} L${layer}`;
+  return `BT${o + 1} L${layer}`;
 }
 
 export const defaultLayerName = (osIndex: number, layer: number) => `${OS_LIST[osIndex]?.short ?? `OS${osIndex}`} ${layer}`;
@@ -83,7 +90,7 @@ export function retargetOsKeys(layers: Layer[], before: OsLayout, after: OsLayou
     if (target === undefined) return b;
     const o = splitLayerIndex(before, target).os;
     if (o < 0 || o >= before.systems.length || target !== osDefaultIndex(before, o)) return b;
-    if (b.b === 'os_sel' && OS_LIST[o]?.profile !== b.p[0]) return b;
+    if (b.b === 'os_sel' && groupProfile(o) !== b.p[0]) return b;
     const next = osDefaultIndex(after, o);
     if (next === target) return b;
     return b.b === 'os_sel' ? { ...b, p: [b.p[0], next] } : { ...b, p: [next] };
@@ -96,7 +103,7 @@ export function retargetOsKeys(layers: Layer[], before: OsLayout, after: OsLayou
 
 /** OS 切替キーのバインディング */
 export function osSelectBinding(os: OsLayout, osIndex: number, linkBluetooth: boolean): Binding {
-  return linkBluetooth ? { b: 'os_sel', p: [OS_LIST[osIndex].profile, osDefaultIndex(os, osIndex)] } : { b: 'os_to', p: [osDefaultIndex(os, osIndex)] };
+  return linkBluetooth ? { b: 'os_sel', p: [groupProfile(osIndex), osDefaultIndex(os, osIndex)] } : { b: 'os_to', p: [osDefaultIndex(os, osIndex)] };
 }
 
 /** デバイス / ファイルから読み込んだ OS 切替キーから各 OS のデフォルトレイヤーを推定 */
@@ -109,7 +116,7 @@ export function inferOsDefaults(layers: Layer[], os: OsLayout): OsLayout {
       if (b.b === 'os_to' && b.p.length === 1) target = b.p[0];
       if (target === undefined) continue;
       const t = splitLayerIndex(os, target);
-      if (b.b === 'os_sel' && OS_LIST[t.os]?.profile !== b.p[0]) continue;
+      if (b.b === 'os_sel' && groupProfile(t.os) !== b.p[0]) continue;
       if (systems[t.os]) systems[t.os].defaultLayer = t.layer;
     }
   }
@@ -153,8 +160,8 @@ export const isOsProject = (p: Pick<Project, 'os' | 'layers'>): p is Pick<Projec
   !!p.os && p.layers.length === p.os.layersPerOs * p.os.systems.length;
 
 /** OS のデフォルトレイヤーにある透過キーの数 (透過キーはレイヤー 0 = Windows L0 の割り当てになる) */
-export function transparentOnDefault(layers: Layer[], os: OsLayout, osIndex: number): number {
+export function transparentOnDefault(layers: Layer[], os: OsLayout, osIndex: number, physicalKeys = Infinity): number {
   const idx = osDefaultIndex(os, osIndex);
   if (idx === 0) return 0;
-  return layers[idx]?.bindings.filter((b) => b.b === 'trans').length ?? 0;
+  return layers[idx]?.bindings.slice(0, physicalKeys).filter((b) => b.b === 'trans').length ?? 0;
 }

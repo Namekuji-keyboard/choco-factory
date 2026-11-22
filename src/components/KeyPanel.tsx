@@ -22,8 +22,9 @@ import {
 import { MOD_FUNCS, MODIFIER_KEYCODES, applyMods, keycodeByName, keycodeLabel, modsOf, stripMods } from '../zmk/keycodes';
 import { formatBinding } from '../zmk/keymap';
 import { Kbd } from './ui';
-import { OS_LIST, absLayer, osDefaultIndex, splitLayerIndex } from '../model/os';
+import { absLayer, groupName, groupOs, groupProfile, osDefaultIndex, splitLayerIndex } from '../model/os';
 import type { OsLayout } from '../model/types';
+import { bindingOsProblems } from '../zmk/keycodes.os';
 
 /** ビヘイビアを切り替えたときの初期パラメータ */
 function defaultParams(def: BehaviorDef, prev: Binding, layerIds: number[]): number[] {
@@ -116,6 +117,7 @@ export function KeyPanel() {
   // OS 別キーマップでは、新しく割り当てるレイヤー操作は表示中の OS 内のレイヤーを指す
   const layerIds = os ? Array.from({ length: os.layersPerOs }, (_, j) => project.layers[absLayer(os, curOs, j)].id) : project.layers.map((l) => l.id);
   const notOnDevice = map && !map.byLabel.has(binding.b) && !binding.b.startsWith('__device_');
+  const osProblems = os ? bindingOsProblems(binding, groupOs(os, curOs).id, registry, host) : [];
 
   const update = (next: Binding, label: string) => assign(next, label);
   const setParam = (i: number, v: number) => {
@@ -126,7 +128,7 @@ export function KeyPanel() {
   const changeBehavior = (label: string) => {
     const nd = registry.get(label);
     if (!nd || label === binding.b) return;
-    const params = label === 'os_sel' && os ? [OS_LIST[curOs].profile, osDefaultIndex(os, curOs)] : label === 'os_to' && os ? [osDefaultIndex(os, curOs)] : defaultParams(nd, binding, layerIds);
+    const params = label === 'os_sel' && os ? [groupProfile(curOs), osDefaultIndex(os, curOs)] : label === 'os_to' && os ? [osDefaultIndex(os, curOs)] : defaultParams(nd, binding, layerIds);
     update({ b: label, p: params }, `${nd.nameJa} に変更`);
   };
 
@@ -139,7 +141,7 @@ export function KeyPanel() {
           <div>
             <div className="text-sm font-semibold">{multi ? `${selected.length} 個のキーを選択中` : `キー #${primaryPos + 1}`}</div>
             <div className="text-xs text-muted">
-              {os ? `${OS_LIST[curOs].name} / Layer ${splitLayerIndex(os, layerIndex).layer}` : layer.name} ・ {k.side === 'L' ? '左手' : '右手'}
+              {os ? `${groupName(os, curOs)} / Layer ${splitLayerIndex(os, layerIndex).layer}` : layer.name} ・ {k.side === 'L' ? '左手' : '右手'}
               {k.row !== undefined ? ` ${k.row + 1} 行目` : ''}
               {multi ? ' (最後に選んだキーを表示)' : ''}
             </div>
@@ -161,6 +163,11 @@ export function KeyPanel() {
             <Copy size={13} />
           </button>
         </div>
+        {osProblems.length > 0 && (
+          <p className="mt-2 rounded-md bg-danger/10 px-2 py-1 text-xs text-danger">
+            {osProblems.join('・')} は {groupOs(os!, curOs).name} では動作しないキーコードです (ZMK 公式のキーコード一覧)。割り当ては残していますが、別のキーへの変更をおすすめします。
+          </p>
+        )}
         {notOnDevice && (
           <p className="mt-2 rounded-md bg-warn/10 px-2 py-1 text-xs text-warn">接続中のキーボードのファームウェアにこのビヘイビアがありません。適用するとエラーになります。</p>
         )}
@@ -206,7 +213,7 @@ export function KeyPanel() {
                 layers={project.layers.map((l, idx) => {
                   if (!os) return { id: l.id, label: `${idx}: ${l.name}` };
                   const s = splitLayerIndex(os, idx);
-                  return { id: l.id, label: `Layer ${s.layer}${l.name !== `${OS_LIST[s.os].short} ${s.layer}` ? ` (${l.name})` : ''}`, group: OS_LIST[s.os].name, own: s.os === curOs };
+                  return { id: l.id, label: `Layer ${s.layer} (${l.name})`, group: groupName(os, s.os), own: s.os === curOs };
                 })}
                 scrollVal={scrollValFor(project.keymapSource)}
               />
@@ -418,25 +425,25 @@ function OsSwitchEditor({ os, binding, onChange }: { os: OsLayout; binding: Bind
   const linked = binding.b === 'os_sel';
   const target = linked ? binding.p[1] : binding.p[0];
   const t = splitLayerIndex(os, target ?? 0);
-  const profile = linked ? binding.p[0] : OS_LIST[t.os]?.profile;
-  const standard = linked ? OS_LIST[t.os]?.profile === profile && target === osDefaultIndex(os, t.os) : target === osDefaultIndex(os, t.os);
-  const set = (osIndex: number, layer: number, link: boolean, prof = OS_LIST[osIndex].profile) =>
+  const profile = linked ? binding.p[0] : groupProfile(t.os);
+  const standard = linked ? groupProfile(t.os) === profile && target === osDefaultIndex(os, t.os) : target === osDefaultIndex(os, t.os);
+  const set = (osIndex: number, layer: number, link: boolean, prof = groupProfile(osIndex)) =>
     onChange(link ? { b: 'os_sel', p: [prof, absLayer(os, osIndex, layer)] } : { b: 'os_to', p: [absLayer(os, osIndex, layer)] });
   return (
     <div className="space-y-3 rounded-lg border border-line p-3">
       <div>
-        <label className="label">切り替え先の OS</label>
-        <div className="grid grid-cols-3 gap-1">
-          {OS_LIST.map((o, i) => (
-            <button key={o.id} className="chip justify-center" data-on={t.os === i} onClick={() => set(i, os.systems[i].defaultLayer, linked)}>
-              {o.name}
+        <label className="label">切り替え先 (Bluetooth プロファイルと、そこに設定した OS)</label>
+        <div className="grid grid-cols-1 gap-1">
+          {os.systems.map((sys, i) => (
+            <button key={i} className="chip justify-start" data-on={t.os === i} onClick={() => set(i, sys.defaultLayer, linked)}>
+              Bluetooth {i + 1}: {groupOs(os, i).name}
             </button>
           ))}
         </div>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={linked} onChange={(e) => set(t.os, t.layer, e.target.checked)} />
-        Bluetooth プロファイルも切り替える (BT {OS_LIST[t.os]?.profile})
+        Bluetooth プロファイルも切り替える (Bluetooth {groupProfile(t.os) + 1})
       </label>
       <div>
         <label className="label">移動先のレイヤー</label>

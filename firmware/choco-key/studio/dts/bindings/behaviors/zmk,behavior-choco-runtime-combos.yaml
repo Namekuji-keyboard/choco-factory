@@ -1,0 +1,29 @@
+description: |
+  Combo configuration slot. The two parameters encode the combo (key positions, timeout,
+  active layers). The combo engine reads these bindings from layer 0 at runtime, so combos can
+  be created / edited / deleted with ZMK Studio without rebuilding the firmware.
+
+  param1: bit n = key position n (0-30)
+  param2: bits 0-10 = key positions 31-41, bits 11-20 = timeout (ms, 0 = slot unused),
+          bits 21-25 = layer groups (OS, 0 = all), bits 26-30 = layer in group (0 = all)
+
+compatible: "zmk,behavior-choco-runtime-combos"
+
+include: two_param.yaml
+
+properties:
+  config-first-position:
+    type: int
+    required: true
+  output-first-position:
+    type: int
+    required: true
+  slots:
+    type: int
+    required: true
+  physical-keys:
+    type: int
+    required: true
+  layers-per-group:
+    type: int
+    default: 5

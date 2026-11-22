@@ -1,6 +1,10 @@
 import type { Binding, KeyboardDefinition, Layer, Project } from './types';
 import { behaviorRegistry, layersFromParsed, macroBehavior, parseKeymap } from '../zmk/keymap';
-import { LAYERS_PER_OS, OS_LIST, OS_SCHEMA, defaultOsLayout, expandToOsLayers, inferOsDefaults, isOsProject } from './os';
+import { LAYERS_PER_OS, OS_LIST, defaultOsLayout, expandToOsLayers, inferOsDefaults, isOsProject } from './os';
+import { macroBehaviorLabel, padRuntimeLayers, writeCombo, writeMacroSteps } from './runtime';
+
+/** データ形式のバージョン (2 = OS 別キーマップ / 3 = 即時編集の仮想キー) */
+export const PROJECT_SCHEMA = 3;
 
 export const newId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `p-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -30,9 +34,22 @@ export function osLayersFromKeymap(kb: KeyboardDefinition, source: string, layer
 
 export function createProject(kb: KeyboardDefinition, name: string, source = defaultKeymapSource(kb)): Project {
   const now = Date.now();
-  const layers = osLayersFromKeymap(kb, source, defaultLayers(kb, source));
+  const layers = padRuntimeLayers(osLayersFromKeymap(kb, source, defaultLayers(kb, source)), kb);
   const os = inferOsDefaults(layers, defaultOsLayout());
-  return { id: newId(), name, keyboardId: kb.id, schema: OS_SCHEMA, os, layers, keymapSource: source, macros: [], shortcuts: [], combos: parseKeymap(source).combos, createdAt: now, updatedAt: now };
+  return {
+    id: newId(),
+    name,
+    keyboardId: kb.id,
+    schema: PROJECT_SCHEMA,
+    os,
+    layers,
+    keymapSource: kb.runtime && !isRuntimeSource(source, kb) ? defaultKeymapSource(kb) : source,
+    macros: [],
+    shortcuts: [],
+    combos: kb.runtime ? [] : parseKeymap(source).combos,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 /** インポートした .keymap からプロジェクトを作成。キー数が合わない場合はエラー */
@@ -43,6 +60,17 @@ export function projectFromKeymapFile(kb: KeyboardDefinition, name: string, text
   const bad = layers.find((l) => l.bindings.length !== kb.keys.length);
   if (bad) throw new Error(`「${bad.name}」のキー数 (${bad.bindings.length}) が ${kb.name} のキー数 (${kb.keys.length}) と一致しません`);
   return createProject(kb, name, text);
+}
+
+/** 即時編集の仮想キーを持つキーマップか */
+export function isRuntimeSource(source: string, kb: KeyboardDefinition): boolean {
+  if (!kb.runtime) return false;
+  try {
+    const p = parseKeymap(source);
+    return p.layers.length > 0 && p.layers.every((l) => l.bindings.length === kb.runtime!.total) && p.labels.has(kb.runtime.comboBehavior);
+  } catch {
+    return false;
+  }
 }
 
 /** 旧バージョン (OS 別キーマップ導入前) の既定キーマップか */
@@ -84,8 +112,46 @@ export function migrateProject(p: Project, kb: KeyboardDefinition): Project {
       ...(rest.length ? { legacyLayers: [...(p.legacyLayers ?? []), ...rest] } : {}),
     };
   }
-  next.schema = OS_SCHEMA;
+  next = migrateToRuntime(next, kb);
+  next.schema = PROJECT_SCHEMA;
   return next;
+}
+
+/**
+ * schema 2 → 3: 物理キーだけのレイヤーに即時編集用の仮想キーを足し、
+ * エンコーダー (sensors)・コンボ・マクロを仮想キーの設定に移す。
+ */
+function migrateToRuntime(p: Project, kb: KeyboardDefinition): Project {
+  const rt = kb.runtime;
+  if (!rt || (p.layers[0]?.bindings.length ?? 0) >= rt.total) return p;
+  let layers = padRuntimeLayers(p.layers, kb);
+  const names = { macros: Array.from({ length: rt.macroSlots }, () => ''), combos: Array.from({ length: rt.comboSlots }, () => '') };
+  const keptCombos = [];
+  let slot = 0;
+  for (const c of p.combos ?? []) {
+    try {
+      if (slot >= rt.comboSlots) throw new Error('full');
+      layers = writeCombo(layers, rt, slot, c);
+      names.combos[slot++] = c.name;
+    } catch {
+      keptCombos.push(c);
+    }
+  }
+  const keptMacros = [];
+  let m = 0;
+  for (const mac of p.macros ?? []) {
+    if (m >= rt.macroSlots || mac.keys.length > rt.macroSteps) {
+      keptMacros.push(mac);
+      continue;
+    }
+    layers = writeMacroSteps(layers, rt, m, mac.keys.map((k) => ({ b: 'kp', p: [k] })));
+    const label = macroBehaviorLabel(rt, m);
+    layers = layers.map((l) => ({ ...l, bindings: l.bindings.map((b) => (b.b === mac.label ? { b: label, p: [] } : b)) }));
+    names.macros[m++] = mac.name;
+  }
+  // 旧版の同梱キーマップ (25 レイヤー・物理キーのみ) は新しい同梱キーマップに切り替える
+  const source = isRuntimeSource(p.keymapSource, kb) ? p.keymapSource : defaultKeymapSource(kb);
+  return { ...p, layers, keymapSource: source, combos: keptCombos, macros: keptMacros, runtimeNames: names };
 }
 
 export const TRANS: Binding = { b: 'trans', p: [] };

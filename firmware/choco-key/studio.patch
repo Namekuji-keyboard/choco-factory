@@ -1,6 +1,39 @@
-diff -ru choco-key/original/build.yaml choco-key/studio/build.yaml
---- choco-key/original/build.yaml	2026-11-22 00:17:08.900636028 +0900
-+++ choco-key/studio/build.yaml	2026-11-22 00:17:09.026030013 +0900
+diff -ruN choco-key/original/CMakeLists.txt choco-key/studio/CMakeLists.txt
+--- choco-key/original/CMakeLists.txt	1970-01-01 09:00:00.000000000 +0900
++++ choco-key/studio/CMakeLists.txt	2026-11-22 21:41:18.480963171 +0900
+@@ -0,0 +1,3 @@
++# Choco Factory: ZMK Studio からエンコーダー・マクロ・コンボを即時変更するためのビヘイビア
++target_sources_ifdef(CONFIG_CHOCO_BEHAVIOR_VKEY app PRIVATE src/behavior_vkey.c)
++target_sources_ifdef(CONFIG_CHOCO_RUNTIME_COMBO app PRIVATE src/runtime_combo.c)
+diff -ruN choco-key/original/Kconfig choco-key/studio/Kconfig
+--- choco-key/original/Kconfig	1970-01-01 09:00:00.000000000 +0900
++++ choco-key/studio/Kconfig	2026-11-22 21:41:18.483783730 +0900
+@@ -0,0 +1,22 @@
++# Choco Factory runtime configuration (ZMK v0.2.1)
++
++DT_COMPAT_CHOCO_BEHAVIOR_VKEY := zmk,behavior-choco-vkey
++DT_COMPAT_CHOCO_RUNTIME_COMBO := zmk,behavior-choco-runtime-combos
++
++config CHOCO_BEHAVIOR_VKEY
++    bool "Virtual key behavior (press the binding at a virtual key position)"
++    default $(dt_compat_enabled,$(DT_COMPAT_CHOCO_BEHAVIOR_VKEY))
++
++config CHOCO_RUNTIME_COMBO
++    bool "Combos configured from keymap bindings (editable with ZMK Studio)"
++    default $(dt_compat_enabled,$(DT_COMPAT_CHOCO_RUNTIME_COMBO))
++
++config CHOCO_RUNTIME_COMBO_MAX_PENDING
++    int "Max keys captured while a combo is being detected"
++    default 4
++    depends on CHOCO_RUNTIME_COMBO
++
++config CHOCO_RUNTIME_COMBO_MAX_ACTIVE
++    int "Max combos held at the same time"
++    default 4
++    depends on CHOCO_RUNTIME_COMBO
+diff -ruN choco-key/original/build.yaml choco-key/studio/build.yaml
+--- choco-key/original/build.yaml	2026-11-22 21:41:18.301416962 +0900
++++ choco-key/studio/build.yaml	2026-11-22 21:41:18.431815239 +0900
 @@ -1,7 +1,12 @@
  ---
 +# ZMK Studio 対応版:
@@ -14,24 +47,89 @@ diff -ru choco-key/original/build.yaml choco-key/studio/build.yaml
    - board: seeeduino_xiao_ble
      shield: Choco-Key_L rgbled_adapter
    - board: seeeduino_xiao_ble
-diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choco-Key.keymap
---- choco-key/original/config/Choco-Key.keymap	2026-11-22 00:17:08.862762547 +0900
-+++ choco-key/studio/config/Choco-Key.keymap	2026-11-22 00:17:09.033994551 +0900
-@@ -1,3 +1,13 @@
+diff -ruN choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choco-Key.keymap
+--- choco-key/original/config/Choco-Key.keymap	2026-11-22 21:41:18.268601660 +0900
++++ choco-key/studio/config/Choco-Key.keymap	2026-11-22 21:41:18.447651809 +0900
+@@ -1,3 +1,17 @@
 +/*
-+ * Choco-Key キーマップ (OS 別 25 レイヤー版 / Choco Factory で生成)
++ * Choco-Key キーマップ (OS 別 25 レイヤー + 即時編集 / Choco Factory で生成)
 + *
-+ * レイヤー番号 = OS × 5 + OS 内のレイヤー番号
-+ *   Windows: 0〜4 / macOS: 5〜9 / Linux: 10〜14 / iOS・iPadOS: 15〜19 / Android: 20〜24
-+ * 各 OS の Layer 4 の右手 2 段目に OS 切替キー (&os_sel <BT プロファイル> <レイヤー>) があります。
-+ *   Windows = BT 0 / macOS = BT 1 / Linux = BT 2 / iOS = BT 3 / Android = BT 4
-+ * 電源投入時はレイヤー 0 (Windows Layer 0) から始まります (ZMK はアクティブなレイヤーを保存しないため)。
++ * レイヤー番号 = Bluetooth プロファイル × 5 + レイヤー番号 (プロファイルごとに OS を選べます)
++ *   BT 0: 0〜4 / BT 1: 5〜9 / BT 2: 10〜14 / BT 3: 15〜19 / BT 4: 20〜24
++ * 各グループの Layer 4 の右手 2 段目に OS 切替キー (&os_sel <BT プロファイル> <レイヤー>) があります。
++ * 電源投入時はレイヤー 0 から始まります (ZMK はアクティブなレイヤーを保存しないため)。
++ *
++ * 各レイヤーのキー 1〜42 は物理キー、43〜126 は物理キーの無い仮想キーです (ZMK Studio で即時に変更できます)。
++ *   43〜46: エンコーダー (右 時計回り / 右 反時計回り / 左 時計回り / 左 反時計回り)。レイヤーごとに設定可
++ *   47〜94: マクロ &rtm0〜&rtm5 の中身 (8 ステップずつ)。レイヤー 0 で設定し、他のレイヤーは &trans
++ *   95〜110: コンボの設定 (&rt_combo)、111〜126: コンボの動作。レイヤー 0 で設定し、他のレイヤーは &trans
 + */
 +
  #include <behaviors.dtsi>
  #include <dt-bindings/zmk/bt.h>
  #include <dt-bindings/zmk/keys.h>
-@@ -21,6 +31,25 @@
+@@ -15,15 +29,115 @@
+     combos { compatible = "zmk,combos"; };
+ 
+     macros {
++        // ---- Choco Factory 即時編集マクロ: 中身 (仮想キー 46〜93) は ZMK Studio で変更 ----
++        rtm0: rtm0 {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "RT Macro 1";
++            wait-ms = <10>;
++            tap-ms = <10>;
++            bindings = <&vkey 46 &vkey 47 &vkey 48 &vkey 49 &vkey 50 &vkey 51 &vkey 52 &vkey 53>;
++        };
++
++        rtm1: rtm1 {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "RT Macro 2";
++            wait-ms = <10>;
++            tap-ms = <10>;
++            bindings = <&vkey 54 &vkey 55 &vkey 56 &vkey 57 &vkey 58 &vkey 59 &vkey 60 &vkey 61>;
++        };
++
++        rtm2: rtm2 {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "RT Macro 3";
++            wait-ms = <10>;
++            tap-ms = <10>;
++            bindings = <&vkey 62 &vkey 63 &vkey 64 &vkey 65 &vkey 66 &vkey 67 &vkey 68 &vkey 69>;
++        };
++
++        rtm3: rtm3 {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "RT Macro 4";
++            wait-ms = <10>;
++            tap-ms = <10>;
++            bindings = <&vkey 70 &vkey 71 &vkey 72 &vkey 73 &vkey 74 &vkey 75 &vkey 76 &vkey 77>;
++        };
++
++        rtm4: rtm4 {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "RT Macro 5";
++            wait-ms = <10>;
++            tap-ms = <10>;
++            bindings = <&vkey 78 &vkey 79 &vkey 80 &vkey 81 &vkey 82 &vkey 83 &vkey 84 &vkey 85>;
++        };
++
++        rtm5: rtm5 {
++            compatible = "zmk,behavior-macro";
++            #binding-cells = <0>;
++            display-name = "RT Macro 6";
++            wait-ms = <10>;
++            tap-ms = <10>;
++            bindings = <&vkey 86 &vkey 87 &vkey 88 &vkey 89 &vkey 90 &vkey 91 &vkey 92 &vkey 93>;
++        };
++
+         to_layer_0: to_layer_0 {
+             compatible = "zmk,behavior-macro-one-param";
+             #binding-cells = <1>;
              bindings = <&to 0 &macro_param_1to1 &kp MACRO_PLACEHOLDER>;
              label = "TO_LAYER_0";
          };
@@ -57,7 +155,36 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
      };
  
      behaviors {
-@@ -54,6 +83,7 @@
++        // ---- Choco Factory 即時編集 (firmware/choco-key/studio/src) ----
++        vkey: vkey {
++            compatible = "zmk,behavior-choco-vkey";
++            #binding-cells = <1>;
++            display-name = "Virtual Key";
++        };
++
++        rt_combo: rt_combo {
++            compatible = "zmk,behavior-choco-runtime-combos";
++            #binding-cells = <2>;
++            display-name = "Runtime Combo";
++            config-first-position = <94>;
++            output-first-position = <110>;
++            slots = <16>;
++            physical-keys = <42>;
++            layers-per-group = <5>;
++        };
++
++        // エンコーダー: 回すと仮想キー (右 42/43・左 44/45) の割り当てを押す
++        enc_vk: enc_vk {
++            compatible = "zmk,behavior-sensor-rotate-var";
++            #sensor-binding-cells = <2>;
++            bindings = <&vkey>, <&vkey>;
++            tap-ms = <20>;
++        };
++
+         lt_to_layer_0: lt_to_layer_0 {
+             compatible = "zmk,behavior-hold-tap";
+             label = "LAYER_TAP_TO_0";
+@@ -54,58 +168,528 @@
          compatible = "zmk,keymap";
  
          default_layer {
@@ -65,7 +192,21 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
              bindings = <
  &kp Q      &kp W           &kp E     &kp R      &kp T                                        &kp Y     &kp U    &kp I           &kp O    &kp P
  &kp A      &kp S           &kp D     &kp F      &kp G                                        &kp H     &kp J    &kp K           &kp L    &kp MINUS
-@@ -65,6 +95,7 @@
+ &kp Z      &kp X           &kp C     &kp V      &kp B                                        &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
+ &kp LCTRL  &mt PSCRN LWIN  &kp LALT  &kp LSHFT  &lt 1 LA(GRAVE)  &lt 2 SPACE    &lt 3 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 4 ESC
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&none         &none           &none            &none           &none  &none  &none  &none
++&none         &none           &none            &none           &none  &none  &none  &none
++&none         &none           &none            &none           &none  &none  &none  &none
++&none         &none           &none            &none           &none  &none  &none  &none
++&none         &none           &none            &none           &none  &none  &none  &none
++&none         &none           &none            &none           &none  &none  &none  &none
++&none         &none           &none            &none           &none  &none  &none  &none  &none  &none  &none  &none  &none  &none  &none  &none
++&none         &none           &none            &none           &none  &none  &none  &none  &none  &none  &none  &none  &none  &none  &none  &none
+             >;
+ 
+-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
          };
  
          layer_1 {
@@ -73,15 +214,45 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
              bindings = <
  &kp LC(Y)  &kp LC(Z)  &kp LC(V)  &kp LC(C)  &kp LC(LS(C))                    &trans  &trans  &trans  &trans  &trans
  &trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
-@@ -76,6 +107,7 @@
+ &trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
+ &trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+             >;
+ 
+-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
          };
  
          layer_2 {
 +            display-name = "Win 2";
              bindings = <
  &kp MINUS  &kp N7  &kp N8  &kp N9  &kp PLUS                     &kp LPAR  &kp RPAR  &kp EXCL  &kp AT     &kp HASH
- &kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET          
-@@ -87,6 +119,7 @@
+-&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET          
++&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
+ &kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
+-&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans                  
++&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+             >;
+ 
+-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
          };
  
          layer_3 {
@@ -89,7 +260,22 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
              bindings = <
  &trans  &trans  &trans  &trans  &trans                    &kp F1   &kp F2   &kp F3  &kp F4  &kp F5
  &trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
-@@ -98,11 +131,252 @@
+ &trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
+-&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans 
++&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+             >;
+ 
+-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
          };
  
          layer_4 {
@@ -99,9 +285,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 +&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 +&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_5 {
@@ -111,9 +306,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&kp A      &kp S           &kp D     &kp F      &kp G                                        &kp H     &kp J    &kp K           &kp L    &kp MINUS
 +&kp Z      &kp X           &kp C     &kp V      &kp B                                        &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
 +&kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 6 LA(GRAVE)  &lt 7 SPACE    &lt 8 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 9 ESC
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_6 {
@@ -123,9 +327,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
 +&trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
 +&trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_7 {
@@ -135,9 +348,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
 +&kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
 +&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_8 {
@@ -147,9 +369,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
 +&trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
 +&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_9 {
@@ -159,9 +390,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 +&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 +&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_10 {
@@ -171,9 +411,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&kp A      &kp S           &kp D     &kp F      &kp G                                           &kp H     &kp J    &kp K           &kp L    &kp MINUS
 +&kp Z      &kp X           &kp C     &kp V      &kp B                                           &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
 +&kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 11 LA(GRAVE)  &lt 12 SPACE    &lt 13 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 14 ESC
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_11 {
@@ -183,9 +432,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
 +&trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
 +&trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_12 {
@@ -195,9 +453,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
 +&kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
 +&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_13 {
@@ -207,9 +474,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
 +&trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
 +&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_14 {
@@ -219,9 +495,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 +&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 +&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_15 {
@@ -231,9 +516,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&kp A      &kp S           &kp D     &kp F      &kp G                                           &kp H     &kp J    &kp K           &kp L    &kp MINUS
 +&kp Z      &kp X           &kp C     &kp V      &kp B                                           &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
 +&kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 16 LA(GRAVE)  &lt 17 SPACE    &lt 18 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 19 ESC
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_16 {
@@ -243,9 +537,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
 +&trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
 +&trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_17 {
@@ -255,9 +558,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
 +&kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
 +&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_18 {
@@ -267,9 +579,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
 +&trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
 +&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_19 {
@@ -279,9 +600,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 +&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 +&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_20 {
@@ -291,9 +621,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&kp A      &kp S           &kp D     &kp F      &kp G                                           &kp H     &kp J    &kp K           &kp L    &kp MINUS
 +&kp Z      &kp X           &kp C     &kp V      &kp B                                           &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
 +&kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 21 LA(GRAVE)  &lt 22 SPACE    &lt 23 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 24 ESC
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_21 {
@@ -303,9 +642,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
 +&trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
 +&trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_22 {
@@ -315,9 +663,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
 +&kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
 +&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_23 {
@@ -327,9 +684,18 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
 +&trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
 +&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 +            >;
 +
-+            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
 +        };
 +
 +        layer_24 {
@@ -343,13 +709,26 @@ diff -ru choco-key/original/config/Choco-Key.keymap choco-key/studio/config/Choc
 +&bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 +&bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 +&trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
++&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
++&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
              >;
  
-             sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
-diff -ru choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi
---- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 00:17:08.819545383 +0900
-+++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 00:17:09.063717635 +0900
-@@ -1,9 +1,63 @@
+-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
++            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
+         };
+     };
+ };
+diff -ruN choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi
+--- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 21:41:18.220587456 +0900
++++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.dtsi	2026-11-22 21:41:18.468601586 +0900
+@@ -1,20 +1,170 @@
  #include <dt-bindings/zmk/matrix_transform.h>
 +#include <physical_layouts.dtsi>
  
@@ -410,15 +789,625 @@ diff -ru choco-key/original/config/boards/shields/Choco-Key/Choco-Key.dtsi choco
 +            , <&key_physical_attrs 100 100  1000  300  0 0 0>
 +            , <&key_physical_attrs 100 100  1100  300  0 0 0>
 +            , <&key_physical_attrs 100 100  1200  300  0 0 0>
++            // ---- 仮想キー (物理キーなし。Choco Factory の即時編集用) ----
++            // 42-45: エンコーダー (右 時計回り / 右 反時計回り / 左 時計回り / 左 反時計回り)
++            // 46-93: マクロ 6 個 × 8 ステップ / 94-109: コンボの設定 16 個 / 110-125: コンボの出力 16 個
++            , <&key_physical_attrs 100 100     0  500  0 0 0>
++            , <&key_physical_attrs 100 100   100  500  0 0 0>
++            , <&key_physical_attrs 100 100   200  500  0 0 0>
++            , <&key_physical_attrs 100 100   300  500  0 0 0>
++            , <&key_physical_attrs 100 100   400  500  0 0 0>
++            , <&key_physical_attrs 100 100   500  500  0 0 0>
++            , <&key_physical_attrs 100 100   600  500  0 0 0>
++            , <&key_physical_attrs 100 100   700  500  0 0 0>
++            , <&key_physical_attrs 100 100   800  500  0 0 0>
++            , <&key_physical_attrs 100 100   900  500  0 0 0>
++            , <&key_physical_attrs 100 100  1000  500  0 0 0>
++            , <&key_physical_attrs 100 100  1100  500  0 0 0>
++            , <&key_physical_attrs 100 100  1200  500  0 0 0>
++            , <&key_physical_attrs 100 100  1300  500  0 0 0>
++            , <&key_physical_attrs 100 100     0  600  0 0 0>
++            , <&key_physical_attrs 100 100   100  600  0 0 0>
++            , <&key_physical_attrs 100 100   200  600  0 0 0>
++            , <&key_physical_attrs 100 100   300  600  0 0 0>
++            , <&key_physical_attrs 100 100   400  600  0 0 0>
++            , <&key_physical_attrs 100 100   500  600  0 0 0>
++            , <&key_physical_attrs 100 100   600  600  0 0 0>
++            , <&key_physical_attrs 100 100   700  600  0 0 0>
++            , <&key_physical_attrs 100 100   800  600  0 0 0>
++            , <&key_physical_attrs 100 100   900  600  0 0 0>
++            , <&key_physical_attrs 100 100  1000  600  0 0 0>
++            , <&key_physical_attrs 100 100  1100  600  0 0 0>
++            , <&key_physical_attrs 100 100  1200  600  0 0 0>
++            , <&key_physical_attrs 100 100  1300  600  0 0 0>
++            , <&key_physical_attrs 100 100     0  700  0 0 0>
++            , <&key_physical_attrs 100 100   100  700  0 0 0>
++            , <&key_physical_attrs 100 100   200  700  0 0 0>
++            , <&key_physical_attrs 100 100   300  700  0 0 0>
++            , <&key_physical_attrs 100 100   400  700  0 0 0>
++            , <&key_physical_attrs 100 100   500  700  0 0 0>
++            , <&key_physical_attrs 100 100   600  700  0 0 0>
++            , <&key_physical_attrs 100 100   700  700  0 0 0>
++            , <&key_physical_attrs 100 100   800  700  0 0 0>
++            , <&key_physical_attrs 100 100   900  700  0 0 0>
++            , <&key_physical_attrs 100 100  1000  700  0 0 0>
++            , <&key_physical_attrs 100 100  1100  700  0 0 0>
++            , <&key_physical_attrs 100 100  1200  700  0 0 0>
++            , <&key_physical_attrs 100 100  1300  700  0 0 0>
++            , <&key_physical_attrs 100 100     0  800  0 0 0>
++            , <&key_physical_attrs 100 100   100  800  0 0 0>
++            , <&key_physical_attrs 100 100   200  800  0 0 0>
++            , <&key_physical_attrs 100 100   300  800  0 0 0>
++            , <&key_physical_attrs 100 100   400  800  0 0 0>
++            , <&key_physical_attrs 100 100   500  800  0 0 0>
++            , <&key_physical_attrs 100 100   600  800  0 0 0>
++            , <&key_physical_attrs 100 100   700  800  0 0 0>
++            , <&key_physical_attrs 100 100   800  800  0 0 0>
++            , <&key_physical_attrs 100 100   900  800  0 0 0>
++            , <&key_physical_attrs 100 100  1000  800  0 0 0>
++            , <&key_physical_attrs 100 100  1100  800  0 0 0>
++            , <&key_physical_attrs 100 100  1200  800  0 0 0>
++            , <&key_physical_attrs 100 100  1300  800  0 0 0>
++            , <&key_physical_attrs 100 100     0  900  0 0 0>
++            , <&key_physical_attrs 100 100   100  900  0 0 0>
++            , <&key_physical_attrs 100 100   200  900  0 0 0>
++            , <&key_physical_attrs 100 100   300  900  0 0 0>
++            , <&key_physical_attrs 100 100   400  900  0 0 0>
++            , <&key_physical_attrs 100 100   500  900  0 0 0>
++            , <&key_physical_attrs 100 100   600  900  0 0 0>
++            , <&key_physical_attrs 100 100   700  900  0 0 0>
++            , <&key_physical_attrs 100 100   800  900  0 0 0>
++            , <&key_physical_attrs 100 100   900  900  0 0 0>
++            , <&key_physical_attrs 100 100  1000  900  0 0 0>
++            , <&key_physical_attrs 100 100  1100  900  0 0 0>
++            , <&key_physical_attrs 100 100  1200  900  0 0 0>
++            , <&key_physical_attrs 100 100  1300  900  0 0 0>
++            , <&key_physical_attrs 100 100     0  1000  0 0 0>
++            , <&key_physical_attrs 100 100   100  1000  0 0 0>
++            , <&key_physical_attrs 100 100   200  1000  0 0 0>
++            , <&key_physical_attrs 100 100   300  1000  0 0 0>
++            , <&key_physical_attrs 100 100   400  1000  0 0 0>
++            , <&key_physical_attrs 100 100   500  1000  0 0 0>
++            , <&key_physical_attrs 100 100   600  1000  0 0 0>
++            , <&key_physical_attrs 100 100   700  1000  0 0 0>
++            , <&key_physical_attrs 100 100   800  1000  0 0 0>
++            , <&key_physical_attrs 100 100   900  1000  0 0 0>
++            , <&key_physical_attrs 100 100  1000  1000  0 0 0>
++            , <&key_physical_attrs 100 100  1100  1000  0 0 0>
++            , <&key_physical_attrs 100 100  1200  1000  0 0 0>
++            , <&key_physical_attrs 100 100  1300  1000  0 0 0>
 +            ;
      };
  
      default_transform: keymap_transform_0 {
-diff -ru choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml
---- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 00:17:08.836636051 +0900
-+++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 00:17:09.056635973 +0900
+         compatible = "zmk,matrix-transform";
+         columns = <11>;
+-        rows = <4>;               
++        rows = <13>;
+         map = <
+             RC(0,4) RC(0,3) RC(0,2) RC(0,1) RC(0,0)                     RC(2,6) RC(2,7)  RC(2,8) RC(2,9) RC(2,10)
+             RC(1,4) RC(1,3) RC(1,2) RC(1,1) RC(1,0)                     RC(1,6) RC(1,7)  RC(1,8) RC(1,9) RC(1,10)
+             RC(2,4) RC(2,3) RC(2,2) RC(2,1) RC(2,0)                     RC(0,6) RC(0,7)  RC(0,8) RC(0,9) RC(0,10)
+             RC(3,4) RC(3,3) RC(3,2) RC(3,1) RC(3,0) RC(4,4)     RC(3,7) RC(3,8) RC(4,10) RC(3,6) RC(3,9) RC(3,10)
++            // 仮想キー 42〜125 (キースキャンには存在しない行。Choco Factory の即時編集用)
++            RC(5,0) RC(5,1) RC(5,2) RC(5,3) RC(5,4) RC(5,5) RC(5,6) RC(5,7) RC(5,8) RC(5,9) RC(5,10)
++            RC(6,0) RC(6,1) RC(6,2) RC(6,3) RC(6,4) RC(6,5) RC(6,6) RC(6,7) RC(6,8) RC(6,9) RC(6,10)
++            RC(7,0) RC(7,1) RC(7,2) RC(7,3) RC(7,4) RC(7,5) RC(7,6) RC(7,7) RC(7,8) RC(7,9) RC(7,10)
++            RC(8,0) RC(8,1) RC(8,2) RC(8,3) RC(8,4) RC(8,5) RC(8,6) RC(8,7) RC(8,8) RC(8,9) RC(8,10)
++            RC(9,0) RC(9,1) RC(9,2) RC(9,3) RC(9,4) RC(9,5) RC(9,6) RC(9,7) RC(9,8) RC(9,9) RC(9,10)
++            RC(10,0) RC(10,1) RC(10,2) RC(10,3) RC(10,4) RC(10,5) RC(10,6) RC(10,7) RC(10,8) RC(10,9) RC(10,10)
++            RC(11,0) RC(11,1) RC(11,2) RC(11,3) RC(11,4) RC(11,5) RC(11,6) RC(11,7) RC(11,8) RC(11,9) RC(11,10)
++            RC(12,0) RC(12,1) RC(12,2) RC(12,3) RC(12,4) RC(12,5) RC(12,6)
+         >;
+     };
+     
+diff -ruN choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml
+--- choco-key/original/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 21:41:18.238569011 +0900
++++ choco-key/studio/config/boards/shields/Choco-Key/Choco-Key.zmk.yml	2026-11-22 21:41:18.465511222 +0900
 @@ -6,3 +6,4 @@
  requires: [seeeduino_xiao_ble]
  features:
    - keys
 +  - studio
+diff -ruN choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-runtime-combos.yaml choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-runtime-combos.yaml
+--- choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-runtime-combos.yaml	1970-01-01 09:00:00.000000000 +0900
++++ choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-runtime-combos.yaml	2026-11-22 21:41:18.420601605 +0900
+@@ -0,0 +1,29 @@
++description: |
++  Combo configuration slot. The two parameters encode the combo (key positions, timeout,
++  active layers). The combo engine reads these bindings from layer 0 at runtime, so combos can
++  be created / edited / deleted with ZMK Studio without rebuilding the firmware.
++
++  param1: bit n = key position n (0-30)
++  param2: bits 0-10 = key positions 31-41, bits 11-20 = timeout (ms, 0 = slot unused),
++          bits 21-25 = layer groups (OS, 0 = all), bits 26-30 = layer in group (0 = all)
++
++compatible: "zmk,behavior-choco-runtime-combos"
++
++include: two_param.yaml
++
++properties:
++  config-first-position:
++    type: int
++    required: true
++  output-first-position:
++    type: int
++    required: true
++  slots:
++    type: int
++    required: true
++  physical-keys:
++    type: int
++    required: true
++  layers-per-group:
++    type: int
++    default: 5
+diff -ruN choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml
+--- choco-key/original/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml	1970-01-01 09:00:00.000000000 +0900
++++ choco-key/studio/dts/bindings/behaviors/zmk,behavior-choco-vkey.yaml	2026-11-22 21:41:18.428737883 +0900
+@@ -0,0 +1,8 @@
++description: |
++  Virtual key. Pressing it presses the keymap binding at the given (virtual) key position
++  of the currently active layers. Used for rotary encoders and macros whose actions are
++  edited at runtime with ZMK Studio.
++
++compatible: "zmk,behavior-choco-vkey"
++
++include: one_param.yaml
+diff -ruN choco-key/original/src/behavior_vkey.c choco-key/studio/src/behavior_vkey.c
+--- choco-key/original/src/behavior_vkey.c	1970-01-01 09:00:00.000000000 +0900
++++ choco-key/studio/src/behavior_vkey.c	2026-11-22 21:41:18.441223171 +0900
+@@ -0,0 +1,84 @@
++/*
++ * Choco Factory: virtual key behavior
++ *
++ * &vkey <position> を押すと、現在有効なレイヤーの <position> (物理キーの無い仮想キー位置) の
++ * 割り当てを押したことにします。仮想キー位置の割り当ては通常のキーと同じく ZMK Studio で
++ * 変更・フラッシュ保存できるため、エンコーダーやマクロの中身をファームウェアの再ビルドなしで変えられます。
++ *
++ * SPDX-License-Identifier: MIT
++ */
++
++#define DT_DRV_COMPAT zmk_behavior_choco_vkey
++
++#include <zephyr/device.h>
++#include <zephyr/logging/log.h>
++#include <drivers/behavior.h>
++
++#include <zmk/behavior.h>
++#include <zmk/keymap.h>
++#include <zmk/events/position_state_changed.h>
++
++LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
++
++#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
++
++/* キーマップはセントラル (分割しない場合は本体) にしか無い */
++#define CHOCO_HAS_KEYMAP (!IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL))
++
++static int vkey_init(const struct device *dev) { return 0; }
++
++static int vkey_pressed(struct zmk_behavior_binding *binding, struct zmk_behavior_binding_event event) {
++#if CHOCO_HAS_KEYMAP
++    LOG_DBG("vkey press %d", binding->param1);
++    zmk_keymap_position_state_changed(ZMK_POSITION_STATE_CHANGE_SOURCE_LOCAL, binding->param1, true,
++                                      event.timestamp);
++#endif
++    return ZMK_BEHAVIOR_OPAQUE;
++}
++
++static int vkey_released(struct zmk_behavior_binding *binding,
++                         struct zmk_behavior_binding_event event) {
++#if CHOCO_HAS_KEYMAP
++    LOG_DBG("vkey release %d", binding->param1);
++    zmk_keymap_position_state_changed(ZMK_POSITION_STATE_CHANGE_SOURCE_LOCAL, binding->param1, false,
++                                      event.timestamp);
++#endif
++    return ZMK_BEHAVIOR_OPAQUE;
++}
++
++#if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
++static const struct behavior_parameter_value_metadata vkey_param_values[] = {
++    {
++        .display_name = "Position",
++        .type = BEHAVIOR_PARAMETER_VALUE_TYPE_RANGE,
++        .range = {.min = 0, .max = 255},
++    },
++};
++
++static const struct behavior_parameter_metadata_set vkey_param_set[] = {{
++    .param1_values = vkey_param_values,
++    .param1_values_len = ARRAY_SIZE(vkey_param_values),
++}};
++
++static const struct behavior_parameter_metadata vkey_metadata = {
++    .sets_len = ARRAY_SIZE(vkey_param_set),
++    .sets = vkey_param_set,
++};
++#endif
++
++static const struct behavior_driver_api vkey_driver_api = {
++    .binding_pressed = vkey_pressed,
++    .binding_released = vkey_released,
++    .locality = BEHAVIOR_LOCALITY_CENTRAL,
++#if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
++    .parameter_metadata = &vkey_metadata,
++#endif
++};
++
++#define VKEY_INST(n)                                                                               \
++    BEHAVIOR_DT_INST_DEFINE(n, vkey_init, NULL, NULL, NULL, POST_KERNEL,                           \
++                            CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &vkey_driver_api);
++
++DT_INST_FOREACH_STATUS_OKAY(VKEY_INST)
++
++#endif
+diff -ruN choco-key/original/src/runtime_combo.c choco-key/studio/src/runtime_combo.c
+--- choco-key/original/src/runtime_combo.c	1970-01-01 09:00:00.000000000 +0900
++++ choco-key/studio/src/runtime_combo.c	2026-11-22 21:41:18.437769238 +0900
+@@ -0,0 +1,354 @@
++/*
++ * Choco Factory: ZMK Studio から編集できるコンボ
++ *
++ * ZMK v0.2.1 標準のコンボは devicetree で固定されるため、変更にはファームウェアの再ビルドが必要です。
++ * このモジュールはコンボの設定を「キーマップのバインディング」として持ちます。
++ *
++ *   レイヤー 0 の仮想キー位置 config-first-position + n  : &rt_combo <param1> <param2> (コンボ n の設定)
++ *   レイヤー 0 の仮想キー位置 output-first-position + n  : コンボ n が成立したときの動作 (任意のバインディング)
++ *
++ * どちらも ZMK Studio の set_layer_binding / save_changes でそのまま書き込み・フラッシュ保存できるので、
++ * コンボの作成・編集・削除がファームウェアの再ビルドなしで即時に反映されます。
++ *
++ * 設定のエンコード (どちらのパラメータも 31 bit 以内)
++ *   param1: bit n      = キー位置 n (0〜30)
++ *   param2: bit 0-10   = キー位置 31〜41
++ *           bit 11-20  = 判定時間 (ms)。0 ならこのスロットは未使用
++ *           bit 21-25  = 有効なレイヤーグループ (OS / Bluetooth プロファイル。0 = すべて)
++ *           bit 26-30  = グループ内の有効なレイヤー (0 = すべて)
++ *
++ * 動作は ZMK 標準の combo.c と同じ方針です (キーを捕捉し、成立しなければ元の順序で再送)。
++ *
++ * SPDX-License-Identifier: MIT
++ */
++
++#define DT_DRV_COMPAT zmk_behavior_choco_runtime_combos
++
++#include <zephyr/device.h>
++#include <zephyr/kernel.h>
++#include <zephyr/logging/log.h>
++#include <string.h>
++
++#include <drivers/behavior.h>
++#include <zmk/behavior.h>
++#include <zmk/event_manager.h>
++#include <zmk/events/position_state_changed.h>
++#include <zmk/keymap.h>
++
++LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
++
++#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
++
++#define CHOCO_HAS_KEYMAP (!IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL))
++
++#define CFG_FIRST DT_INST_PROP(0, config_first_position)
++#define OUT_FIRST DT_INST_PROP(0, output_first_position)
++#define SLOTS DT_INST_PROP(0, slots)
++#define PHYSICAL_KEYS DT_INST_PROP(0, physical_keys)
++#define LAYERS_PER_GROUP DT_INST_PROP(0, layers_per_group)
++
++BUILD_ASSERT(SLOTS <= 32, "slots must be <= 32");
++BUILD_ASSERT(PHYSICAL_KEYS <= 42, "the encoding supports up to 42 physical keys");
++
++#define MAX_PENDING CONFIG_CHOCO_RUNTIME_COMBO_MAX_PENDING
++#define MAX_ACTIVE CONFIG_CHOCO_RUNTIME_COMBO_MAX_ACTIVE
++
++/* ---- 設定ビヘイビア &rt_combo (押しても何もしない。パラメータだけを保持する) ---- */
++
++static int rt_combo_init(const struct device *dev) { return 0; }
++
++static int rt_combo_noop(struct zmk_behavior_binding *binding,
++                         struct zmk_behavior_binding_event event) {
++    return ZMK_BEHAVIOR_OPAQUE;
++}
++
++#if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
++static const struct behavior_parameter_value_metadata rt_combo_values[] = {
++    {
++        .display_name = "Value",
++        .type = BEHAVIOR_PARAMETER_VALUE_TYPE_RANGE,
++        .range = {.min = 0, .max = INT32_MAX},
++    },
++};
++
++static const struct behavior_parameter_metadata_set rt_combo_param_set[] = {{
++    .param1_values = rt_combo_values,
++    .param1_values_len = ARRAY_SIZE(rt_combo_values),
++    .param2_values = rt_combo_values,
++    .param2_values_len = ARRAY_SIZE(rt_combo_values),
++}};
++
++static const struct behavior_parameter_metadata rt_combo_metadata = {
++    .sets_len = ARRAY_SIZE(rt_combo_param_set),
++    .sets = rt_combo_param_set,
++};
++#endif
++
++static const struct behavior_driver_api rt_combo_driver_api = {
++    .binding_pressed = rt_combo_noop,
++    .binding_released = rt_combo_noop,
++    .locality = BEHAVIOR_LOCALITY_CENTRAL,
++#if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
++    .parameter_metadata = &rt_combo_metadata,
++#endif
++};
++
++BEHAVIOR_DT_INST_DEFINE(0, rt_combo_init, NULL, NULL, NULL, POST_KERNEL,
++                        CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &rt_combo_driver_api);
++
++#if CHOCO_HAS_KEYMAP
++
++/* ---- 設定の読み込み ---- */
++
++struct rt_combo {
++    uint64_t keys;
++    uint8_t key_count;
++    uint16_t timeout_ms;
++    uint8_t group_mask;
++    uint8_t layer_mask;
++};
++
++static struct rt_combo combos[SLOTS];
++
++static const char *cfg_behavior_name(void) { return DEVICE_DT_INST_GET(0)->name; }
++
++static void load_config(void) {
++    const char *name = cfg_behavior_name();
++    for (int n = 0; n < SLOTS; n++) {
++        struct rt_combo *c = &combos[n];
++        memset(c, 0, sizeof(*c));
++        const struct zmk_behavior_binding *b = zmk_keymap_get_layer_binding_at_idx(0, CFG_FIRST + n);
++        if (b == NULL || b->behavior_dev == NULL || strcmp(b->behavior_dev, name) != 0) {
++            continue;
++        }
++        uint32_t p1 = b->param1 & 0x7FFFFFFF;
++        uint32_t p2 = b->param2 & 0x7FFFFFFF;
++        c->keys = (uint64_t)p1 | ((uint64_t)(p2 & 0x7FF) << 31);
++        c->keys &= (PHYSICAL_KEYS >= 64) ? UINT64_MAX : ((1ULL << PHYSICAL_KEYS) - 1);
++        c->timeout_ms = (p2 >> 11) & 0x3FF;
++        c->group_mask = (p2 >> 21) & 0x1F;
++        c->layer_mask = (p2 >> 26) & 0x1F;
++        for (uint64_t k = c->keys; k; k &= k - 1) {
++            c->key_count++;
++        }
++        if (c->key_count < 2 || c->timeout_ms == 0) {
++            c->keys = 0; /* 未使用 */
++        }
++    }
++}
++
++static bool combo_active_on_current_layer(const struct rt_combo *c) {
++    uint8_t idx = zmk_keymap_highest_layer_active();
++    uint8_t group = idx / LAYERS_PER_GROUP;
++    uint8_t layer = idx % LAYERS_PER_GROUP;
++    if (c->group_mask && (group >= 5 || !(c->group_mask & BIT(group)))) {
++        return false;
++    }
++    if (c->layer_mask && !(c->layer_mask & BIT(layer))) {
++        return false;
++    }
++    return true;
++}
++
++/* ---- 判定 ---- */
++
++static struct zmk_position_state_changed_event pending[MAX_PENDING];
++static int pending_count;
++static uint64_t pending_keys;
++static uint32_t candidates; /* bit n = スロット n が候補 */
++static int fully_pressed = -1;
++static int64_t timeout_at;
++static struct k_work_delayable timeout_work;
++
++struct active_combo {
++    int slot; /* -1 = 空き */
++    uint64_t held_keys;
++    bool output_released;
++};
++static struct active_combo active[MAX_ACTIVE];
++
++static void press_output(int slot, int64_t timestamp) {
++    zmk_keymap_position_state_changed(ZMK_POSITION_STATE_CHANGE_SOURCE_LOCAL, OUT_FIRST + slot, true,
++                                      timestamp);
++}
++
++static void release_output(int slot, int64_t timestamp) {
++    zmk_keymap_position_state_changed(ZMK_POSITION_STATE_CHANGE_SOURCE_LOCAL, OUT_FIRST + slot,
++                                      false, timestamp);
++}
++
++/* 捕捉していたキーを元の順序で後段 (ホールドタップ・キーマップなど) に流す */
++static int release_pending(void) {
++    int count = pending_count;
++    pending_count = 0;
++    pending_keys = 0;
++    for (int i = 0; i < count; i++) {
++        if (i == 0) {
++            ZMK_EVENT_RELEASE(pending[i]);
++        } else {
++            ZMK_EVENT_RAISE(pending[i]);
++        }
++    }
++    return count;
++}
++
++static void activate(int slot) {
++    for (int i = 0; i < MAX_ACTIVE; i++) {
++        if (active[i].slot >= 0) {
++            continue;
++        }
++        active[i].slot = slot;
++        active[i].held_keys = combos[slot].keys;
++        active[i].output_released = false;
++        int64_t ts = pending[0].data.timestamp;
++        /* コンボのキーは消費し、それ以外 (後から押された無関係なキー) は残して後で流す */
++        int kept = 0;
++        for (int j = 0; j < pending_count; j++) {
++            if (!(combos[slot].keys & (1ULL << pending[j].data.position))) {
++                pending[kept++] = pending[j];
++            }
++        }
++        pending_count = kept;
++        pending_keys = 0;
++        for (int j = 0; j < kept; j++) {
++            pending_keys |= 1ULL << pending[j].data.position;
++        }
++        press_output(slot, ts);
++        release_pending();
++        return;
++    }
++    LOG_WRN("runtime combo: too many active combos");
++    release_pending();
++}
++
++/* 判定を終える: 成立していれば発動、そうでなければ捕捉したキーを流す。流したキー数を返す */
++static int cleanup(void) {
++    k_work_cancel_delayable(&timeout_work);
++    timeout_at = 0;
++    candidates = 0;
++    if (fully_pressed >= 0) {
++        int slot = fully_pressed;
++        int before = pending_count;
++        fully_pressed = -1;
++        activate(slot);
++        /* activate() が流したキーの数 = 捕捉数 - コンボのキー数 */
++        return before - combos[slot].key_count;
++    }
++    return release_pending();
++}
++
++static void timeout_handler(struct k_work *work) {
++    if (timeout_at == 0 || k_uptime_get() < timeout_at) {
++        return;
++    }
++    cleanup();
++}
++
++static int on_key_down(const struct zmk_position_state_changed *ev) {
++    uint64_t bit = 1ULL << ev->position;
++
++    if (pending_count == 0) {
++        load_config();
++        candidates = 0;
++        uint16_t min_timeout = UINT16_MAX;
++        for (int n = 0; n < SLOTS; n++) {
++            if ((combos[n].keys & bit) && combo_active_on_current_layer(&combos[n])) {
++                candidates |= BIT(n);
++                min_timeout = MIN(min_timeout, combos[n].timeout_ms);
++            }
++        }
++        if (!candidates) {
++            return ZMK_EV_EVENT_BUBBLE;
++        }
++        timeout_at = ev->timestamp + min_timeout;
++        k_work_schedule(&timeout_work, K_MSEC(MAX(1, timeout_at - k_uptime_get())));
++    } else {
++        for (int n = 0; n < SLOTS; n++) {
++            if ((candidates & BIT(n)) && !(combos[n].keys & bit)) {
++                candidates &= ~BIT(n);
++            }
++        }
++    }
++
++    if (pending_count >= MAX_PENDING) {
++        cleanup();
++        return ZMK_EV_EVENT_BUBBLE;
++    }
++    pending[pending_count++] = copy_raised_zmk_position_state_changed(ev);
++    pending_keys |= bit;
++
++    if (!candidates) {
++        /* どのコンボにも当てはまらない: 成立済みのコンボがあれば発動し、残りのキー (このキーを含む) を流す */
++        cleanup();
++        return ZMK_EV_EVENT_CAPTURED;
++    }
++
++    int remaining = 0;
++    for (int n = 0; n < SLOTS; n++) {
++        if (!(candidates & BIT(n))) {
++            continue;
++        }
++        remaining++;
++        if (combos[n].keys == pending_keys) {
++            fully_pressed = n;
++        }
++    }
++    if (fully_pressed >= 0 && remaining == 1) {
++        cleanup(); /* 発動 */
++    }
++    return ZMK_EV_EVENT_CAPTURED;
++}
++
++static int on_key_up(const struct zmk_position_state_changed *ev) {
++    uint64_t bit = 1ULL << ev->position;
++    int released = cleanup();
++
++    for (int i = 0; i < MAX_ACTIVE; i++) {
++        struct active_combo *a = &active[i];
++        if (a->slot < 0 || !(a->held_keys & bit)) {
++            continue;
++        }
++        a->held_keys &= ~bit;
++        if (!a->output_released) {
++            /* コンボのキーを 1 つでも離したら出力を離す (ZMK 標準と同じ) */
++            a->output_released = true;
++            release_output(a->slot, ev->timestamp);
++        }
++        if (!a->held_keys) {
++            a->slot = -1;
++        }
++        return ZMK_EV_EVENT_HANDLED;
++    }
++
++    if (released > 1) {
++        /* 2 個目以降の押下は再送したので、離す順序も保つため再送する */
++        struct zmk_position_state_changed_event dupe = copy_raised_zmk_position_state_changed(ev);
++        ZMK_EVENT_RAISE(dupe);
++        return ZMK_EV_EVENT_CAPTURED;
++    }
++    return ZMK_EV_EVENT_BUBBLE;
++}
++
++static int rt_combo_listener(const zmk_event_t *eh) {
++    const struct zmk_position_state_changed *ev = as_zmk_position_state_changed(eh);
++    if (ev == NULL || ev->position >= PHYSICAL_KEYS) {
++        return ZMK_EV_EVENT_BUBBLE;
++    }
++    return ev->state ? on_key_down(ev) : on_key_up(ev);
++}
++
++ZMK_LISTENER(choco_runtime_combo, rt_combo_listener);
++ZMK_SUBSCRIPTION(choco_runtime_combo, zmk_position_state_changed);
++
++static int rt_combo_sys_init(void) {
++    k_work_init_delayable(&timeout_work, timeout_handler);
++    for (int i = 0; i < MAX_ACTIVE; i++) {
++        active[i].slot = -1;
++    }
++    return 0;
++}
++
++SYS_INIT(rt_combo_sys_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
++
++#endif /* CHOCO_HAS_KEYMAP */
++#endif /* DT_HAS_COMPAT_STATUS_OKAY */
+diff -ruN choco-key/original/zephyr/module.yml choco-key/studio/zephyr/module.yml
+--- choco-key/original/zephyr/module.yml	2026-11-22 21:41:18.298466116 +0900
++++ choco-key/studio/zephyr/module.yml	2026-11-22 21:41:18.477933435 +0900
+@@ -1,3 +1,7 @@
++name: choco-key
+ build:
++  cmake: .
++  kconfig: Kconfig
+   settings:
+     board_root: .
++    dts_root: .

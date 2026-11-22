@@ -4,7 +4,7 @@ import { chocoKey } from '../keyboards/choco-key';
 import { exportKeymap, formatBinding, behaviorRegistry, layersFromParsed, parseKeymap } from '../zmk/keymap';
 import { formatKeycode, keycodeByName, keycodeLabel } from '../zmk/keycodes';
 
-const original = chocoKey.files.original['config/Choco-Key.keymap'];
+const original = chocoKey.files.pristine!['config/Choco-Key.keymap'];
 const studio = chocoKey.files.studio['config/Choco-Key.keymap'];
 
 describe('keycodes', () => {
@@ -67,9 +67,12 @@ describe('Choco-Key.keymap の解析', () => {
     // macOS Layer 0 のレイヤー参照は macOS 内 (5〜9) を指す
     expect(ls[5].bindings[34]).toEqual({ b: 'lt', p: [6, (0x04 << 24 | 0x070035) >>> 0] });
     expect(ls[5].bindings[41]).toEqual({ b: 'lt', p: [9, 0x070029] });
-    // エンコーダー
-    expect(ls[0].sensors).toHaveLength(2);
-    expect(ls[0].sensors![0].cw).toEqual({ b: 'msc', p: [100] });
+    // 物理キー 42 + 仮想キー 84 (エンコーダー・マクロ・コンボ)
+    expect(ls.every((l) => l.bindings.length === 126)).toBe(true);
+    expect(ls[0].bindings[42]).toEqual({ b: 'msc', p: [100] }); // 右エンコーダー 時計回り = 上スクロール
+    expect(ls[0].bindings[94]).toEqual({ b: 'none', p: [] }); // コンボ 1 (未使用)
+    expect(ls[3].bindings[94]).toEqual({ b: 'trans', p: [] });
+    expect(p.layers[0].sensorBindings).toBe('<&enc_vk 42 43>, <&enc_vk 44 45>');
     // 無変更なら完全一致
     expect(exportKeymap(studio, ls, chocoKey, [], { osMacros: true }).text).toBe(studio);
   });

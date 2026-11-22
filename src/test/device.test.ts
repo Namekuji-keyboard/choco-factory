@@ -84,7 +84,7 @@ describe('ZMK Studio RPC (シミュレーター)', () => {
 
   it('旧ファームウェア (5 レイヤー + 予備 3) には 25 レイヤーを書き込めない', async () => {
     let flash: string | null = null;
-    const old = chocoKey.files.original[chocoKey.keymapPath];
+    const old = chocoKey.files.pristine![chocoKey.keymapPath];
     const sim = new StudioSimulator(chocoKey, { keymapSource: old, storage: { load: () => flash, save: (v) => (flash = v), clear: () => (flash = null) } });
     const dev = StudioDevice.fromTransport(sim.transport(), 'usb', {});
     const map = buildBehaviorMap(await dev.listBehaviors(), known);

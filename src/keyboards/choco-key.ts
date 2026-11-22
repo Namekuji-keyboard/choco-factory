@@ -29,6 +29,8 @@ for (let c = 7; c < 13; c++) keys.push({ x: c, y: 3, w: 1, h: 1, side: 'R', row:
 
 const original = collect('original');
 const studioOverrides = collect('studio');
+/** ZMK Studio を無効にした構成: 即時編集用の仮想キーやモジュールは同じで、build.yaml だけ元のまま */
+const noStudio = { ...original, ...studioOverrides, 'build.yaml': original['build.yaml'] };
 
 export const chocoKey: KeyboardDefinition = {
   id: 'choco-key',
@@ -45,9 +47,23 @@ export const chocoKey: KeyboardDefinition = {
     { sensorIndex: 1, side: 'L', x: 5.5, y: 2.5, name: '左エンコーダー' },
     { sensorIndex: 0, side: 'R', x: 7.5, y: 2.5, name: '右エンコーダー' },
   ],
-  rowSizes: [10, 10, 10, 12],
-  leftCounts: [5, 5, 5, 6],
+  // 物理キー 4 行 + 仮想キー (エンコーダー 4 / マクロ 6×8 / コンボ設定 16 / コンボ出力 16)
+  rowSizes: [10, 10, 10, 12, 4, 8, 8, 8, 8, 8, 8, 16, 16],
+  leftCounts: [5, 5, 5, 6, 4, 8, 8, 8, 8, 8, 8, 16, 16],
   unlockHint: '右手の最下段右端 (&lt 4 ESC) を押したまま、右手の最上段左端のキー (Layer 4 の &studio_unlock) を押してください。',
-  files: { original, studio: { ...original, ...studioOverrides } },
+  files: { original: noStudio, studio: { ...original, ...studioOverrides }, pristine: original },
   keymapPath: 'config/Choco-Key.keymap',
+  runtime: {
+    encoderBase: 42,
+    macroBase: 46,
+    macroSlots: 6,
+    macroSteps: 8,
+    comboConfigBase: 94,
+    comboOutputBase: 110,
+    comboSlots: 16,
+    layersPerGroup: 5,
+    total: 126,
+    comboBehavior: 'rt_combo',
+    macroBehaviorPrefix: 'rtm',
+  },
 };

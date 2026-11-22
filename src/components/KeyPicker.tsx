@@ -8,9 +8,10 @@ import { KEYCODES, KEYCODE_CATEGORY_LABELS, keycodeLabel, keycodeSearchText, pre
 import { BT_COMMANDS, MOUSE_BUTTONS, MOUSE_MOVES, OUT_COMMANDS, mouseScrolls, type BehaviorDef } from '../zmk/behaviors';
 import { scrollValFor } from '../state/editor';
 import { MacroDialog } from './MacroDialog';
-import { ShortcutsDialog } from './Features';
+import { RuntimeMacrosDialog, ShortcutsDialog } from './Features';
 import { keycodeDescriptionJa } from '../zmk/keycodes.ja';
-import { OS_LIST, absLayer, osSelectBinding, splitLayerIndex } from '../model/os';
+import { keycodeOsSupport } from '../zmk/keycodes.os';
+import { absLayer, groupOs, osSelectBinding, splitLayerIndex } from '../model/os';
 import { SHORTCUT_PRESETS, presetKeys, resolveShortcut, shortcutText } from '../model/shortcuts';
 
 type Tab =
@@ -62,6 +63,8 @@ interface Item {
   binding?: Binding;
   keycode?: number;
   disabled?: boolean;
+  /** 選択中の OS で動作しないキーコード (選択不可) */
+  osBlocked?: boolean;
 }
 
 export function KeyPicker() {
@@ -69,6 +72,8 @@ export function KeyPicker() {
   const [query, setQuery] = useState('');
   const [macroEdit, setMacroEdit] = useState<MacroDef | null | 'new'>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [rtMacros, setRtMacros] = useState(false);
+  const kb = useEditor((s) => s.keyboard);
   const project = useEditor((s) => s.project);
   const layerIndex = useEditor((s) => s.layerIndex);
   const selected = useEditor((s) => s.selected);
@@ -85,13 +90,21 @@ export function KeyPicker() {
 
   const onDevice = (label: string) => !map || map.byLabel.has(label);
 
-  const keycodeItem = (k: Keycode): Item => ({
-    key: `k${k.value}`,
-    label: keycodeLabel(k.value, host),
-    sub: preferredName(k),
-    title: `${k.names.join(' / ')}\n${keycodeDescriptionJa(k)}`,
-    keycode: k.value,
-  });
+  // 表示中の Bluetooth プロファイルに設定した OS (ZMK 公式のキーコード一覧の OS 列で絞り込む)
+  const groupOsInfo = project?.os ? groupOs(project.os, splitLayerIndex(project.os, layerIndex).os) : undefined;
+  const keycodeItem = (k: Keycode): Item => {
+    const sup = groupOsInfo ? keycodeOsSupport(k, groupOsInfo.id) : true;
+    return {
+      key: `k${k.value}`,
+      label: keycodeLabel(k.value, host),
+      sub: preferredName(k) + (sup === null ? ' ?' : ''),
+      title:
+        `${k.names.join(' / ')}\n${keycodeDescriptionJa(k)}` +
+        (groupOsInfo ? (sup === false ? `\n✕ ${groupOsInfo.name} では動作しません (ZMK 公式のキーコード一覧)` : sup === null ? `\n? ${groupOsInfo.name} での動作は未確認です (ZMK 公式のキーコード一覧)` : '') : ''),
+      keycode: k.value,
+      osBlocked: sup === false,
+    };
+  };
   const behaviorItem = (b: Binding, label: string, sub: string, title: string): Item => ({
     key: `${b.b}-${b.p.join('-')}`,
     label,
@@ -129,12 +142,15 @@ export function KeyPicker() {
         ]);
       case 'os':
         if (!os) return [];
-        return OS_LIST.flatMap((o, i) => [
-          behaviorItem(osSelectBinding(os, i, true), o.name, `BT${o.profile} + L${os.systems[i].defaultLayer}`, `${o.name} に切り替え: Bluetooth プロファイル ${o.profile} を選択し、${o.name} のデフォルトレイヤー (Layer ${os.systems[i].defaultLayer}) へ移動`),
-          behaviorItem(osSelectBinding(os, i, false), `${o.short} (層のみ)`, `L${os.systems[i].defaultLayer}`, `${o.name} のデフォルトレイヤー (Layer ${os.systems[i].defaultLayer}) へ移動 (Bluetooth プロファイルは変えない)`),
-        ]);
+        return os.systems.flatMap((sys, i) => {
+          const o = groupOs(os, i);
+          return [
+            behaviorItem(osSelectBinding(os, i, true), `BT${i + 1} ${o.short}`, `BT${i + 1} + L${sys.defaultLayer}`, `Bluetooth ${i + 1} (${o.name}) に切り替え: Bluetooth プロファイル ${i + 1} を選択し、デフォルトレイヤー (Layer ${sys.defaultLayer}) へ移動`),
+            behaviorItem(osSelectBinding(os, i, false), `BT${i + 1} (層のみ)`, `${o.short} L${sys.defaultLayer}`, `Bluetooth ${i + 1} (${o.name}) のデフォルトレイヤー (Layer ${sys.defaultLayer}) へ移動 (Bluetooth プロファイルは変えない)`),
+          ];
+        });
       case 'shortcuts': {
-        const osId = os ? OS_LIST[curOs].id : 'windows';
+        const osId = os ? groupOs(os, curOs).id : 'windows';
         const own = (project.shortcuts ?? []).filter((x) => x.os === 'all' || x.os === osId);
         const ownItems = own.flatMap((x) => {
           const r = resolveShortcut(x);
@@ -176,12 +192,12 @@ export function KeyPicker() {
           .map((d) => behaviorItem({ b: d.label, p: [] }, d.nameJa, `&${d.label}`, d.description));
       case 'macros':
         return [...registry.values()]
-          .filter((d) => d.custom && !/^sc_/.test(d.label))
+          .filter((d) => d.custom && !/^sc_/.test(d.label) && d.label !== 'vkey' && d.label !== kb.runtime?.comboBehavior)
           .map((d) => behaviorItem({ b: d.label, p: d.params.map(() => 0) }, d.nameJa, `&${d.label}`, `${d.description}${d.params.length ? '\nパラメータは右のパネルで設定' : ''}`));
     }
     return [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, query, project, registry, host, map]);
+  }, [tab, query, project, registry, host, map, layerIndex, groupOsInfo?.id]);
 
   if (!project) return null;
   const layer = project.layers[layerIndex];
@@ -196,6 +212,10 @@ export function KeyPicker() {
     }
     if (item.disabled) {
       toast('error', 'このビヘイビアは接続中のキーボードのファームウェアに含まれていません');
+      return;
+    }
+    if (item.osBlocked) {
+      toast('error', `${item.label} は ${groupOsInfo?.name} では動作しないため選択できません (ZMK 公式のキーコード一覧)`);
       return;
     }
     if (item.keycode !== undefined) {
@@ -244,7 +264,17 @@ export function KeyPicker() {
         </div>
       )}
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3">
-        {tab === 'macros' && !query && (
+        {tab === 'macros' && !query && kb.runtime && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 p-2 text-xs text-muted">
+            <span className="flex-1">
+              マクロ (&amp;rtm0〜&amp;rtm{kb.runtime.macroSlots - 1}) の中身はアプリから編集して、キーボードに直接書き込めます (UF2 の書き込みは不要)。下のボタンをクリックすると選択中のキーに割り当てます。
+            </span>
+            <button className="btn-outline py-1 text-xs" onClick={() => setRtMacros(true)}>
+              <Pencil size={13} /> マクロを作成・編集
+            </button>
+          </div>
+        )}
+        {tab === 'macros' && !query && !kb.runtime && (
           <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 p-2 text-xs text-muted">
             <span className="flex-1">
               マクロの作成・変更はファームウェアの再ビルドが必要です (ZMK Studio はマクロの編集に未対応)。作成したマクロは「ファイル」→ ZIP 出力に含まれます。
@@ -295,7 +325,7 @@ export function KeyPicker() {
               onClick={() => pick(it)}
               className={clsx(
                 'keycap relative flex h-14 flex-col items-center justify-center rounded-lg px-1 text-center',
-                it.disabled && 'opacity-40',
+                (it.disabled || it.osBlocked) && 'opacity-30',
               )}
             >
               <span className="max-w-full truncate text-sm leading-tight font-semibold">{it.label}</span>
@@ -307,10 +337,16 @@ export function KeyPicker() {
         {(tab === 'other' || tab === 'apps') && !query && (
           <p className="mt-3 text-xs text-muted">※ OS によっては動作しないキーコードがあります。詳しくは ZMK のキーコード一覧を参照してください。</p>
         )}
+        {groupOsInfo && (
+          <p className="mt-3 text-[11px] text-muted">
+            {groupOsInfo.name} 用の一覧です (表示中の Bluetooth プロファイルの OS)。ZMK 公式のキーコード一覧で {groupOsInfo.name} では動作しないとされているキーは薄く表示され、選択できません。「?」は動作が未確認のキーです。
+          </p>
+        )}
         <p className="mt-3 text-[11px] text-muted">{KEYCODE_CATEGORY_LABELS.letters} などの表示は「設定」の「PC のキーボード配列」(JIS / US) に合わせて表示しています。</p>
       </div>
       {macroEdit && <MacroDialog macro={macroEdit === 'new' ? null : macroEdit} onClose={() => setMacroEdit(null)} />}
       {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+      {rtMacros && <RuntimeMacrosDialog onClose={() => setRtMacros(false)} />}
     </div>
   );
 }

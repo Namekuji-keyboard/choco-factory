@@ -208,8 +208,12 @@ export const useDevice = create<DeviceState>((set, get) => {
         const layers = layersFromDevice(keymap, map, get().registry());
         set({ deviceLayers: layers, availableLayers: keymap.availableLayers, status: 'connected', layerMismatch: null });
         const project = useEditor.getState().project;
-        if (project?.os && layers.length !== project.layers.length) {
-          const msg = `キーボードのレイヤー数は ${layers.length} です。OS 別キーマップ (${project.layers.length} レイヤー) を書き込むには、OS 別 25 レイヤー版のファームウェアを書き込んでください (「ファイル」→「ZMK 設定一式 (ZIP)」でビルドできます)。`;
+        const keyCount = project?.layers[0]?.bindings.length ?? 0;
+        if (project?.os && (layers.length !== project.layers.length || (layers[0] && layers[0].bindings.length !== keyCount))) {
+          const msg =
+            layers.length !== project.layers.length
+              ? `キーボードのレイヤー数は ${layers.length} です。OS 別キーマップ (${project.layers.length} レイヤー) を書き込むには、新しいファームウェアを書き込んでください (「ファイル」→「ZMK 設定一式 (ZIP)」でビルドできます)。`
+              : `キーボードのキー位置の数は ${layers[0].bindings.length} です (このアプリは ${keyCount})。エンコーダー・マクロ・コンボを即時編集できる新しいファームウェアを書き込んでください (「ファイル」→「ZMK 設定一式 (ZIP)」でビルドできます)。`;
           set({ layerMismatch: msg });
           useEditor.getState().toast('error', msg);
           return;
@@ -314,6 +318,7 @@ export function useRegistry(): Map<string, BehaviorDef> {
   const source = project?.keymapSource;
   const macros = project?.macros;
   const shortcuts = project?.shortcuts;
+  const names = project?.runtimeNames;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => registryFor(project, deviceOnlyBehaviors(map)), [source, macros, shortcuts, map]);
+  return useMemo(() => registryFor(project, deviceOnlyBehaviors(map)), [source, macros, shortcuts, names, map]);
 }

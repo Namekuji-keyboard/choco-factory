@@ -1,11 +1,15 @@
 /*
- * Choco-Key キーマップ (OS 別 25 レイヤー版 / Choco Factory で生成)
+ * Choco-Key キーマップ (OS 別 25 レイヤー + 即時編集 / Choco Factory で生成)
  *
- * レイヤー番号 = OS × 5 + OS 内のレイヤー番号
- *   Windows: 0〜4 / macOS: 5〜9 / Linux: 10〜14 / iOS・iPadOS: 15〜19 / Android: 20〜24
- * 各 OS の Layer 4 の右手 2 段目に OS 切替キー (&os_sel <BT プロファイル> <レイヤー>) があります。
- *   Windows = BT 0 / macOS = BT 1 / Linux = BT 2 / iOS = BT 3 / Android = BT 4
- * 電源投入時はレイヤー 0 (Windows Layer 0) から始まります (ZMK はアクティブなレイヤーを保存しないため)。
+ * レイヤー番号 = Bluetooth プロファイル × 5 + レイヤー番号 (プロファイルごとに OS を選べます)
+ *   BT 0: 0〜4 / BT 1: 5〜9 / BT 2: 10〜14 / BT 3: 15〜19 / BT 4: 20〜24
+ * 各グループの Layer 4 の右手 2 段目に OS 切替キー (&os_sel <BT プロファイル> <レイヤー>) があります。
+ * 電源投入時はレイヤー 0 から始まります (ZMK はアクティブなレイヤーを保存しないため)。
+ *
+ * 各レイヤーのキー 1〜42 は物理キー、43〜126 は物理キーの無い仮想キーです (ZMK Studio で即時に変更できます)。
+ *   43〜46: エンコーダー (右 時計回り / 右 反時計回り / 左 時計回り / 左 反時計回り)。レイヤーごとに設定可
+ *   47〜94: マクロ &rtm0〜&rtm5 の中身 (8 ステップずつ)。レイヤー 0 で設定し、他のレイヤーは &trans
+ *   95〜110: コンボの設定 (&rt_combo)、111〜126: コンボの動作。レイヤー 0 で設定し、他のレイヤーは &trans
  */
 
 #include <behaviors.dtsi>
@@ -25,6 +29,61 @@
     combos { compatible = "zmk,combos"; };
 
     macros {
+        // ---- Choco Factory 即時編集マクロ: 中身 (仮想キー 46〜93) は ZMK Studio で変更 ----
+        rtm0: rtm0 {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            display-name = "RT Macro 1";
+            wait-ms = <10>;
+            tap-ms = <10>;
+            bindings = <&vkey 46 &vkey 47 &vkey 48 &vkey 49 &vkey 50 &vkey 51 &vkey 52 &vkey 53>;
+        };
+
+        rtm1: rtm1 {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            display-name = "RT Macro 2";
+            wait-ms = <10>;
+            tap-ms = <10>;
+            bindings = <&vkey 54 &vkey 55 &vkey 56 &vkey 57 &vkey 58 &vkey 59 &vkey 60 &vkey 61>;
+        };
+
+        rtm2: rtm2 {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            display-name = "RT Macro 3";
+            wait-ms = <10>;
+            tap-ms = <10>;
+            bindings = <&vkey 62 &vkey 63 &vkey 64 &vkey 65 &vkey 66 &vkey 67 &vkey 68 &vkey 69>;
+        };
+
+        rtm3: rtm3 {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            display-name = "RT Macro 4";
+            wait-ms = <10>;
+            tap-ms = <10>;
+            bindings = <&vkey 70 &vkey 71 &vkey 72 &vkey 73 &vkey 74 &vkey 75 &vkey 76 &vkey 77>;
+        };
+
+        rtm4: rtm4 {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            display-name = "RT Macro 5";
+            wait-ms = <10>;
+            tap-ms = <10>;
+            bindings = <&vkey 78 &vkey 79 &vkey 80 &vkey 81 &vkey 82 &vkey 83 &vkey 84 &vkey 85>;
+        };
+
+        rtm5: rtm5 {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            display-name = "RT Macro 6";
+            wait-ms = <10>;
+            tap-ms = <10>;
+            bindings = <&vkey 86 &vkey 87 &vkey 88 &vkey 89 &vkey 90 &vkey 91 &vkey 92 &vkey 93>;
+        };
+
         to_layer_0: to_layer_0 {
             compatible = "zmk,behavior-macro-one-param";
             #binding-cells = <1>;
@@ -53,6 +112,32 @@
     };
 
     behaviors {
+        // ---- Choco Factory 即時編集 (firmware/choco-key/studio/src) ----
+        vkey: vkey {
+            compatible = "zmk,behavior-choco-vkey";
+            #binding-cells = <1>;
+            display-name = "Virtual Key";
+        };
+
+        rt_combo: rt_combo {
+            compatible = "zmk,behavior-choco-runtime-combos";
+            #binding-cells = <2>;
+            display-name = "Runtime Combo";
+            config-first-position = <94>;
+            output-first-position = <110>;
+            slots = <16>;
+            physical-keys = <42>;
+            layers-per-group = <5>;
+        };
+
+        // エンコーダー: 回すと仮想キー (右 42/43・左 44/45) の割り当てを押す
+        enc_vk: enc_vk {
+            compatible = "zmk,behavior-sensor-rotate-var";
+            #sensor-binding-cells = <2>;
+            bindings = <&vkey>, <&vkey>;
+            tap-ms = <20>;
+        };
+
         lt_to_layer_0: lt_to_layer_0 {
             compatible = "zmk,behavior-hold-tap";
             label = "LAYER_TAP_TO_0";
@@ -89,9 +174,18 @@
 &kp A      &kp S           &kp D     &kp F      &kp G                                        &kp H     &kp J    &kp K           &kp L    &kp MINUS
 &kp Z      &kp X           &kp C     &kp V      &kp B                                        &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
 &kp LCTRL  &mt PSCRN LWIN  &kp LALT  &kp LSHFT  &lt 1 LA(GRAVE)  &lt 2 SPACE    &lt 3 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 4 ESC
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&none         &none           &none            &none           &none  &none  &none  &none
+&none         &none           &none            &none           &none  &none  &none  &none
+&none         &none           &none            &none           &none  &none  &none  &none
+&none         &none           &none            &none           &none  &none  &none  &none
+&none         &none           &none            &none           &none  &none  &none  &none
+&none         &none           &none            &none           &none  &none  &none  &none
+&none         &none           &none            &none           &none  &none  &none  &none  &none  &none  &none  &none  &none  &none  &none  &none
+&none         &none           &none            &none           &none  &none  &none  &none  &none  &none  &none  &none  &none  &none  &none  &none
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_1 {
@@ -101,21 +195,39 @@
 &trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
 &trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
 &trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_2 {
             display-name = "Win 2";
             bindings = <
 &kp MINUS  &kp N7  &kp N8  &kp N9  &kp PLUS                     &kp LPAR  &kp RPAR  &kp EXCL  &kp AT     &kp HASH
-&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET          
+&kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
 &kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
-&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans                  
+&kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_3 {
@@ -124,10 +236,19 @@
 &trans  &trans  &trans  &trans  &trans                    &kp F1   &kp F2   &kp F3  &kp F4  &kp F5
 &trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
 &trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
-&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans 
+&trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_4 {
@@ -137,9 +258,18 @@
 &bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 &bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 &trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_5 {
@@ -149,9 +279,18 @@
 &kp A      &kp S           &kp D     &kp F      &kp G                                        &kp H     &kp J    &kp K           &kp L    &kp MINUS
 &kp Z      &kp X           &kp C     &kp V      &kp B                                        &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
 &kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 6 LA(GRAVE)  &lt 7 SPACE    &lt 8 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 9 ESC
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_6 {
@@ -161,9 +300,18 @@
 &trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
 &trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
 &trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_7 {
@@ -173,9 +321,18 @@
 &kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
 &kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
 &kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_8 {
@@ -185,9 +342,18 @@
 &trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
 &trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
 &trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_9 {
@@ -197,9 +363,18 @@
 &bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 &bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 &trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_10 {
@@ -209,9 +384,18 @@
 &kp A      &kp S           &kp D     &kp F      &kp G                                           &kp H     &kp J    &kp K           &kp L    &kp MINUS
 &kp Z      &kp X           &kp C     &kp V      &kp B                                           &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
 &kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 11 LA(GRAVE)  &lt 12 SPACE    &lt 13 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 14 ESC
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_11 {
@@ -221,9 +405,18 @@
 &trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
 &trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
 &trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_12 {
@@ -233,9 +426,18 @@
 &kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
 &kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
 &kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_13 {
@@ -245,9 +447,18 @@
 &trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
 &trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
 &trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_14 {
@@ -257,9 +468,18 @@
 &bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 &bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 &trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_15 {
@@ -269,9 +489,18 @@
 &kp A      &kp S           &kp D     &kp F      &kp G                                           &kp H     &kp J    &kp K           &kp L    &kp MINUS
 &kp Z      &kp X           &kp C     &kp V      &kp B                                           &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
 &kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 16 LA(GRAVE)  &lt 17 SPACE    &lt 18 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 19 ESC
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_16 {
@@ -281,9 +510,18 @@
 &trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
 &trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
 &trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_17 {
@@ -293,9 +531,18 @@
 &kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
 &kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
 &kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_18 {
@@ -305,9 +552,18 @@
 &trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
 &trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
 &trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_19 {
@@ -317,9 +573,18 @@
 &bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 &bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 &trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_20 {
@@ -329,9 +594,18 @@
 &kp A      &kp S           &kp D     &kp F      &kp G                                           &kp H     &kp J    &kp K           &kp L    &kp MINUS
 &kp Z      &kp X           &kp C     &kp V      &kp B                                           &kp N     &kp M    &kp COMMA       &kp DOT  &kp SLASH
 &kp LCTRL  &mt PSCRN LGUI  &kp LALT  &kp LSHFT  &lt 21 LA(GRAVE)  &lt 22 SPACE    &lt 23 ENTER  &kp BSPC  &kp DEL  &mt PSCRN CAPS  &kp TAB  &lt 24 ESC
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_21 {
@@ -341,9 +615,18 @@
 &trans     &trans     &kp UP     &trans     &kp LC(S)                        &trans  &trans  &trans  &trans  &trans
 &trans     &kp LEFT   &kp DOWN   &kp RIGHT  &trans                           &trans  &trans  &trans  &trans  &trans
 &trans     &trans     &trans     &trans     &trans         &trans    &trans  &trans  &trans  &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_22 {
@@ -353,9 +636,18 @@
 &kp SLASH  &kp N4  &kp N5  &kp N6  &kp ASTRK                    &kp LBKT  &kp RBKT  &kp DLLR  &kp PRCNT  &kp CARET
 &kp N0     &kp N1  &kp N2  &kp N3  &kp EQUAL                    &kp LT    &kp GT    &kp AMPS  &kp SEMI   &kp SQT
 &kp CARET  &trans  &trans  &trans  &trans     &trans    &trans  &trans    &trans    &trans    &trans     &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_23 {
@@ -365,9 +657,18 @@
 &trans  &trans  &trans  &trans  &trans                    &kp F6   &kp F7   &kp F8  &kp F9  &kp F10
 &trans  &trans  &trans  &trans  &trans                    &kp F11  &kp F12  &trans  &trans  &trans
 &trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans   &trans   &trans  &trans  &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
 
         layer_24 {
@@ -377,9 +678,18 @@
 &bt BT_CLR_ALL  &trans        &trans        &trans        &ind_bat                             &os_sel 0 0     &os_sel 1 5  &os_sel 2 10  &os_sel 3 15  &os_sel 4 20
 &bt BT_CLR      &trans        &trans        &trans        &trans                               &trans          &trans       &trans        &trans        &trans
 &trans          &trans        &trans        &trans        &trans        &bootloader    &trans  &trans          &trans       &trans        &trans        &trans
+&msc SCRL_UP  &msc SCRL_DOWN  &msc SCRL_RIGHT  &msc SCRL_LEFT
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans        &trans          &trans           &trans          &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&scroll_up_down>, <&scroll_left_right>;
+            sensor-bindings = <&enc_vk 42 43>, <&enc_vk 44 45>;
         };
     };
 };

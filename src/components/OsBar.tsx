@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { MoreHorizontal, Copy, Eraser, Pencil, Keyboard, Combine, AlertTriangle } from 'lucide-react';
 import { useEditor } from '../state/editor';
-import { OS_LIST, absLayer, splitLayerIndex, transparentOnDefault } from '../model/os';
+import { OS_LIST, absLayer, groupName, groupOs, splitLayerIndex, transparentOnDefault } from '../model/os';
+import type { OsId } from '../model/types';
+import { useRegistry } from '../state/device';
+import { bindingOsProblems } from '../zmk/keycodes.os';
 import { MenuItem } from './LayerBar';
 
 /**
@@ -18,6 +21,10 @@ export function OsBar({ onShortcuts, onCombos }: { onShortcuts: () => void; onCo
   const clearLayer = useEditor((s) => s.clearLayer);
   const copyOs = useEditor((s) => s.copyOs);
   const copyLayer = useEditor((s) => s.copyLayer);
+  const setGroupOs = useEditor((s) => s.setGroupOs);
+  const kb = useEditor((s) => s.keyboard);
+  const host = useEditor((s) => s.settings.hostLayout);
+  const registry = useRegistry();
   const [editing, setEditing] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -32,31 +39,48 @@ export function OsBar({ onShortcuts, onCombos }: { onShortcuts: () => void; onCo
   if (!project?.os) return null;
   const os = project.os;
   const cur = splitLayerIndex(os, layerIndex);
-  const info = OS_LIST[cur.os];
+  const info = { name: groupName(os, cur.os) };
+  const curOs = groupOs(os, cur.os);
+  // 選択中の OS で動作しないキー (ZMK 公式のキーコード一覧による)。削除はせず警告だけ出す
+  const problems = Array.from({ length: os.layersPerOs }, (_, j) => absLayer(os, cur.os, j)).flatMap((li) =>
+    project.layers[li].bindings.flatMap((b, pos) => bindingOsProblems(b, curOs.id, registry, host).map((k) => ({ layer: li % os.layersPerOs, pos, k }))),
+  );
   const def = os.systems[cur.os].defaultLayer;
-  const transCount = transparentOnDefault(project.layers, os, cur.os);
+  const transCount = transparentOnDefault(project.layers, os, cur.os, kb.keys.length);
 
   return (
     <div className="space-y-2">
       {/* OS 選択 */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="scroll-thin flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-xl bg-surface-2 p-1" role="tablist" aria-label="OS">
-          {OS_LIST.map((o, i) => (
-            <button
-              key={o.id}
-              role="tab"
-              aria-selected={i === cur.os}
-              onClick={() => setOs(i)}
-              className={clsx(
-                'flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold whitespace-nowrap transition-all',
-                i === cur.os ? 'bg-accent text-accent-fg shadow-sm' : 'text-muted hover:bg-surface hover:text-fg',
-              )}
-              title={`${o.name} (Bluetooth プロファイル ${o.profile})`}
-            >
-              {o.name}
-              <span className={clsx('rounded px-1 text-[10px] font-medium', i === cur.os ? 'bg-black/15' : 'bg-line/60')}>BT{o.profile}</span>
-            </button>
-          ))}
+          {os.systems.map((sys, i) => {
+            const active = i === cur.os;
+            return (
+              <div
+                key={i}
+                className={clsx('flex h-10 shrink-0 items-center gap-1 rounded-lg pr-1 pl-3 transition-all', active ? 'bg-accent text-accent-fg shadow-sm' : 'text-muted hover:bg-surface hover:text-fg')}
+              >
+                <button role="tab" aria-selected={active} onClick={() => setOs(i)} className="text-sm font-semibold whitespace-nowrap" title={`Bluetooth プロファイル ${i + 1} (ZMK の BT_SEL ${i})`}>
+                  Bluetooth {i + 1}
+                </button>
+                <select
+                  aria-label={`Bluetooth ${i + 1} の OS`}
+                  className={clsx('h-7 rounded-md border-0 py-0 pr-6 pl-1.5 text-xs font-medium', active ? 'bg-black/15 text-accent-fg' : 'bg-line/60 text-fg')}
+                  value={sys.id}
+                  onChange={(e) => {
+                    setGroupOs(i, e.target.value as OsId);
+                    setOs(i);
+                  }}
+                >
+                  {OS_LIST.map((x) => (
+                    <option key={x.id} value={x.id} className="text-fg">
+                      {x.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
         </div>
         <button className="btn-outline h-9" onClick={onShortcuts} title="ショートカットの登録・管理">
           <Keyboard size={15} /> <span className="hidden sm:inline">ショートカット</span>
@@ -142,27 +166,27 @@ export function OsBar({ onShortcuts, onCombos }: { onShortcuts: () => void; onCo
                 }}
               >
                 <option value="">コピー元を選択…</option>
-                {OS_LIST.map((o, oi) => (
-                  <optgroup key={o.id} label={o.name}>
+                {os.systems.map((_, oi) => (
+                  <optgroup key={oi} label={groupName(os, oi)}>
                     {Array.from({ length: os.layersPerOs }, (_, j) => absLayer(os, oi, j))
                       .filter((i) => i !== layerIndex)
                       .map((i) => (
                         <option key={i} value={i}>
-                          {o.name} Layer {splitLayerIndex(os, i).layer}
+                          {groupName(os, oi)} Layer {splitLayerIndex(os, i).layer}
                         </option>
                       ))}
                   </optgroup>
                 ))}
               </select>
-              <div className="px-2.5 pt-1 pb-0.5 text-[11px] text-muted">{info.name} の全レイヤー (0〜4) を別の OS からコピー</div>
-              {OS_LIST.map((o, oi) =>
+              <div className="px-2.5 pt-1 pb-0.5 text-[11px] text-muted">{info.name} の全レイヤー (0〜4) を別の Bluetooth プロファイルからコピー</div>
+              {os.systems.map((_, oi) =>
                 oi === cur.os ? null : (
                   <MenuItem
-                    key={o.id}
+                    key={oi}
                     icon={<Copy size={14} />}
-                    onClick={() => (confirm(`${o.name} の Layer 0〜4 の内容で、${info.name} の Layer 0〜4 を上書きしますか？`) && copyOs(oi, cur.os), setMenu(false))}
+                    onClick={() => (confirm(`${groupName(os, oi)} の Layer 0〜4 の内容で、${info.name} の Layer 0〜4 を上書きしますか？`) && copyOs(oi, cur.os), setMenu(false))}
                   >
-                    {o.name} からコピー
+                    {groupName(os, oi)} からコピー
                   </MenuItem>
                 ),
               )}
@@ -170,10 +194,21 @@ export function OsBar({ onShortcuts, onCombos }: { onShortcuts: () => void; onCo
           )}
         </div>
       </div>
+      {problems.length > 0 && (
+        <p className="flex items-start gap-1.5 rounded-lg bg-danger/10 px-2.5 py-1.5 text-xs text-danger">
+          <AlertTriangle size={13} className="mt-px shrink-0" />
+          {curOs.name} で動作しないキーが {problems.length} 個あります (ZMK 公式のキーコード一覧による):{' '}
+          {problems
+            .slice(0, 6)
+            .map((p) => `Layer ${p.layer} の #${p.pos + 1} (${p.k})`)
+            .join('、')}
+          {problems.length > 6 ? ' ほか' : ''}。割り当ては削除していません。
+        </p>
+      )}
       {transCount > 0 && (
         <p className="flex items-start gap-1.5 rounded-lg bg-warn/10 px-2.5 py-1.5 text-xs text-warn">
           <AlertTriangle size={13} className="mt-px shrink-0" />
-          {info.name} のデフォルトレイヤー (Layer {def}) に透過 (▽) のキーが {transCount} 個あります。ZMK ではレイヤー 0 (Windows Layer 0) が常に有効なため、OS 切替後にこれらのキーは Windows Layer 0 の割り当てになります。
+          {info.name} のデフォルトレイヤー (Layer {def}) に透過 (▽) のキーが {transCount} 個あります。ZMK ではレイヤー 0 (Bluetooth 1 の Layer 0) が常に有効なため、OS 切替後にこれらのキーは Bluetooth 1 の Layer 0 の割り当てになります。
         </p>
       )}
     </div>
