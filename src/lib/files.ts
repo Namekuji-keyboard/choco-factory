@@ -1,7 +1,8 @@
 import JSZip from 'jszip';
 import type { KeyboardDefinition, Project } from '../model/types';
 import type { ProjectFile } from '../model/project';
-import { exportKeymap } from '../zmk/keymap';
+import { exportKeymap, parseKeymap } from '../zmk/keymap';
+import { wrapperBehaviors } from '../device/wrappers';
 import { shortcutBehaviors } from '../model/shortcuts';
 
 export function download(name: string, data: Blob | string, type = 'text/plain') {
@@ -22,7 +23,8 @@ export function buildKeymap(project: Project, kb: KeyboardDefinition) {
   return exportKeymap(project.keymapSource, project.layers, kb, project.macros, {
     // 即時編集に対応したキーボードでは、コンボはキーマップの仮想キーに入っている
     combos: kb.runtime ? undefined : project.combos,
-    extraBehaviors: shortcutBehaviors(project.shortcuts),
+    // ZMK Studio から &msc などを書き込むための代わりのマクロは、元のキーマップに無ければ必ず追加する
+    extraBehaviors: [...shortcutBehaviors(project.shortcuts), ...(kb.runtime ? wrapperBehaviors(parseKeymap(project.keymapSource).scrollVal) : [])],
     osMacros: !!project.os,
   });
 }

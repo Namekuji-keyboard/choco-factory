@@ -85,7 +85,7 @@ export function bindingToDevice(binding0: Binding, map: BehaviorMap): { behavior
     throw new DeviceError(
       map.wrappers?.length
         ? `&${binding.b} ${binding.p.join(' ')} は ZMK Studio から書き込めない値です (ZMK v0.2.1 の制限)。用意されているスクロール / マウス移動 / クリックの値を選んでください。`
-        : `&${binding.b} (マウス操作) は ZMK v0.2.1 の ZMK Studio から書き込めません。最新のファームウェア (Choco Factory の ZIP 出力) を書き込むと書き込めるようになります。`,
+        : `&${binding.b} (マウス操作) は ZMK v0.2.1 の ZMK Studio からは直接書き込めないため、ファームウェアの代わりのマクロ (cf_scrl_up など) を使いますが、接続中のキーボードには見つかりませんでした。「ファイル」→「ZMK 設定一式 (ZIP)」を出力してビルドし、右手用の .uf2 を書き込んでから、もう一度接続してください。`,
     );
   }
   if (binding.raw !== undefined) {

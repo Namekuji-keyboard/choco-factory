@@ -7,7 +7,7 @@ import { applyToDevice, buildBehaviorMap, layersFromDevice, planApply, planSize,
 import { findKeyboardByDeviceName } from '../keyboards';
 import { BUILTIN_BEHAVIORS, type BehaviorDef } from '../zmk/behaviors';
 import { customBehaviorsFor, registryFor, scrollValFor, useEditor } from './editor';
-import { deviceWrappers } from '../device/wrappers';
+import { deviceWrappers, wrapperBehaviors } from '../device/wrappers';
 import { macroBehavior } from '../zmk/keymap';
 import { shortcutBehaviors } from '../model/shortcuts';
 import { inferOsDefaults } from '../model/os';
@@ -202,6 +202,8 @@ export const useDevice = create<DeviceState>((set, get) => {
           ...(ed.project ? customBehaviorsFor(ed.project.keymapSource) : []),
           ...(ed.project?.macros.map(macroBehavior) ?? []),
           ...shortcutBehaviors(ed.project?.shortcuts),
+          // 代わりのマクロ (プロジェクトのキーマップが古くて定義を含まない場合も対応付けられるように)
+          ...(ed.keyboard.runtime ? wrapperBehaviors(ed.project ? scrollValFor(ed.project.keymapSource) : 10) : []),
         ];
         const map = buildBehaviorMap(await dev.listBehaviors(), known, deviceWrappers(ed.project ? scrollValFor(ed.project.keymapSource) : 10));
         set({ map });

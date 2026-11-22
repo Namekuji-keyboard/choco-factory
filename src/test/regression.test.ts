@@ -8,7 +8,9 @@ import { chocoKey } from '../keyboards/choco-key';
 import { StudioDevice } from '../device/studio';
 import { StudioSimulator } from '../device/simulator';
 import { applyToDevice, buildBehaviorMap, layersFromDevice } from '../device/sync';
-import { deviceWrappers } from '../device/wrappers';
+import { deviceWrappers, wrapperBehaviors } from '../device/wrappers';
+import { buildKeymap } from '../lib/files';
+import { createProject } from '../model/project';
 import { behaviorRegistry, parseKeymap } from '../zmk/keymap';
 import { BUILTIN_BEHAVIORS, mouseScrolls } from '../zmk/behaviors';
 
@@ -51,8 +53,42 @@ describe('不具合 1: エンコーダーのスクロール設定', () => {
     const map = buildBehaviorMap(await dev.listBehaviors(), known); // 代わりのマクロ無し
     const layers = layersFromDevice(await dev.getKeymap(), map, registry);
     layers[0].bindings[42] = { b: 'msc', p: [scroll[1].value] };
-    await expect(applyToDevice(dev, layers, map, registry, () => {})).rejects.toThrow(/ZMK Studio から書き込めません/);
+    await expect(applyToDevice(dev, layers, map, registry, () => {})).rejects.toThrow(/代わりのマクロ/);
     expect(sim.unsaved).toBe(false);
+  });
+});
+
+describe('不具合 1 (続き): 代わりのマクロより前に作ったプロジェクト', () => {
+  // 代わりのマクロ (cf_*) を含まない、以前の同梱キーマップを再現
+  const oldSource = chocoKey.files.studio[chocoKey.keymapPath].replace(/\n {8}\/\/ ---- ZMK Studio から書き込めない[^\n]*\n(?: {8}cf_\w+: cf_\w+ \{[\s\S]*?\n {8}\};\n\n?)+/, '\n');
+
+  it('以前のキーマップには cf_* が無い (前提の確認)', () => {
+    expect(oldSource).not.toContain('cf_scrl_up');
+    expect(parseKeymap(oldSource).layers).toHaveLength(25);
+  });
+
+  it('プロジェクトのキーマップが古くても、キーボードの cf_* と対応付けてスクロールを書き込める', async () => {
+    const { sim, dev } = open({ v: null });
+    // アプリ (state/device.ts) と同じ組み立て: プロジェクトのキーマップ + 代わりのマクロの定義
+    const known2 = [...BUILTIN_BEHAVIORS, ...parseKeymap(oldSource).customBehaviors, ...wrapperBehaviors(parsed.scrollVal)];
+    const map = buildBehaviorMap(await dev.listBehaviors(), known2, deviceWrappers(parsed.scrollVal));
+    expect(map.wrappers).toHaveLength(13);
+    const reg = behaviorRegistry(parseKeymap(oldSource).customBehaviors);
+    const layers = layersFromDevice(await dev.getKeymap(), map, reg);
+    layers[0].bindings[42] = { b: 'msc', p: [scroll[1].value] };
+    layers[0].bindings[44] = { b: 'msc', p: [scroll[3].value] };
+    await applyToDevice(dev, layers, map, reg, () => {});
+    expect(sim.unsaved).toBe(false);
+    expect(layersFromDevice(await dev.getKeymap(), map, reg)[0].bindings[42]).toEqual({ b: 'msc', p: [scroll[1].value] });
+  });
+
+  it('古いキーマップのプロジェクトでも、ZIP / .keymap 出力に cf_* の定義が入る', () => {
+    const p = { ...createProject(chocoKey, 'old'), keymapSource: oldSource };
+    const { text, warnings } = buildKeymap(p, chocoKey);
+    expect(warnings).toEqual([]);
+    const labels = parseKeymap(text).customBehaviors.map((b) => b.label);
+    for (const w of deviceWrappers(parsed.scrollVal)) expect(labels).toContain(w.label);
+    expect(text).toContain('<&macro_press &msc SCRL_UP>, <&macro_pause_for_release>, <&macro_release &msc SCRL_UP>');
   });
 });
 

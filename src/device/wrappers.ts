@@ -8,7 +8,7 @@
  * アプリ内・ファイル出力では通常の &msc / &mmv / &mkp のまま扱う。
  */
 import type { Binding } from '../model/types';
-import { MOUSE_BUTTONS, MOUSE_MOVES, mouseScrolls } from '../zmk/behaviors';
+import { MOUSE_BUTTONS, MOUSE_MOVES, mouseScrolls, type BehaviorDef } from '../zmk/behaviors';
 
 export interface DeviceWrapper {
   label: string;
@@ -60,3 +60,25 @@ export const fromDeviceBinding = (b: Binding, wrappers: DeviceWrapper[]): Bindin
   const w = wrappers.find((x) => x.label === b.b);
   return w ? { ...w.native, p: [...w.native.p] } : b;
 };
+
+/**
+ * 代わりのマクロのビヘイビア定義。
+ * プロジェクトの元にしたキーマップが古く、マクロの定義を含まない場合でも、
+ *  - キーボードとの対応付け (表示名 cf_scrl_up など) ができるように
+ *  - ZIP / .keymap 出力に定義を自動で追加できるように
+ * キーマップとは別に常に用意する。
+ */
+export function wrapperBehaviors(scrollVal: number): BehaviorDef[] {
+  const defs = wrapperDefinitions(scrollVal).split('\n\n');
+  return deviceWrappers(scrollVal).map((w, i) => ({
+    label: w.label,
+    displayName: w.label,
+    nameJa: w.name,
+    description: `${w.name} (ZMK Studio から書き込むための ${w.zmk} の代わりのマクロ)`,
+    params: [],
+    group: 'mouse' as const,
+    custom: true,
+    compatible: 'zmk,behavior-macro',
+    definition: defs[i],
+  }));
+}
